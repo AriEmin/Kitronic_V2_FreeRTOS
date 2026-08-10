@@ -1,0 +1,49 @@
+Öncelikle bu yazacağımız kontrol de bir test olacak ve bitiminde bir rapor üretecek. 
+Rapor sonucunda mekatroniğin sağlık durumunu ve varsa arızalarını belirtecek. 
+Arıza bulma işini halledebilirsek raporun en sonunda tamir için öneride bulunacağız. 
+Pompa ve basınçtan başlıyım. Pompa otomatik olarak 42-60 bar arasında çalışıyor. 
+Ve sürekli basınç düşüşünü ölçüyor.  normalde sağlam bir mekatronikte bir vites pistonu 
+açılıp kapanınca 5 bar civarı kavrama pistonu açılıp kapanınca da 4 bar civarı bir basınç 
+düşüşü oluyor.  yani tam emin değilim ama 42-60 arasında sanırım en az 2 vites değişimi 
+yapması gerek. Daha azında hata veya uyarı vererek GUI tarafında bilgilendirme yapmalı.
+Valflerden ve pistonlardan devam edersek. bildiğin gibi 4 tane vites valfi, 2 tane kavrama 
+valfi ve 2 tane de ana basınç kontrol valfi var. Burdaki ana basınç kontrol valfleri açılmadığı 
+sürece diğer valflere yağ ulaşmaz ve diğer valfleri açsak bile pistonlar hareket etmez.  
+Kavrama pistonları tek vitesler ve çift viteslere göre farklı çalışıyorlar ve hiç bir zaman 
+aynı anda çalışmıyorlar. K1 tek vitesler aktifken çalışıyor K2 ise çift ve geri viteslerinde çalışıyor.  
+Şimdi geldi asıl baba işe, vites pistonları. Vites pistonlarının açık, ortada ve kapalı olmak 
+üzere 3 konumu oluyor. Nedeni ise çok mantıklı. Tek vitesler aynı şaftta, çift vitesler ise başka 
+bir şaft üzerinde duruyor. Totalde 4 tane tek ve 4 tane çift(birisi geri vites) vites 4 piston ile 
+kontrol ediliyor. örneğin 1-3 vites pistonu açıkken 1. vites dişlisini devreye sokuyor, kapalıyken 
+3. vites dişlisini devreye sokuyor. ama bu arada aynı şaftta 5 ve 7. viteslerde var ve bunları da 
+5-7 vites pistonu kontrol ediyor. Vites 1 de ayarlı iken 3. vites dişlisi aktif olamaz çünkü piston 
+ilerde fakat 5 ve 7. viteslerinde aktif olmaması lazım işte bu yüzden 5-7 pistonu ne ilerde nede 
+geride duruyor ki  5. veya 7. vites dişlisi aktif olmasın. Aynı mantık tüm viteslerde var. mesela 
+başka bir örnek, 4. vites için 2-5 vites pistonu kapalı olmalı ve bizim 4. viteste olduğumuzu 
+düşünürsek 6-R vites pistonunun ortada durması lazım. Vites 6 veya R de ise 2-4 ortada durmalı. 
+Umarım bu olayı anlatabilmişimdir.  Ayrıca bu vites pistonları veya kavrama pistonları bizim 
+ayarladığımızın dışında da hareket etmemeli. yani ben k1 i çalıştırınca k2 kendiliğinden hareket 
+edip ileri veya geri girmemeli buda bir hata. Aynı şekilde vites pistonları da öyle olmalı. 
+İşte tüm bu hareket durumlarını da hall sensörler ile okumamız gerek ki hata kontrolünü yapabilelim. 
+Vites geçiş mantığı da şu şekilde; Ön hazırlıklı. Yani mesela ben P de iken vites  sadece R ye geçebileceği 
+için 6-R pistonu kapalı  pozisyonda diğerleri ortada. R de iken 6-R pistonu kapalı durmaya devam ediyor 
+ama K2 kavrama pistonu açılıyor ve R dişlisindeki gücü tekerler aktarmış oluyor ama diğer pistonlar hala ortada. 
+Vitesi N ye alınca K1 ve K2 kapalı duruyor ama vites sonrasında hem D ye hemde R ye geçebileceği için Hem R kapalı 
+kalmaya devam ediyor hemde D nin ilk vitesi olan 1. vites için 1. vites pistonu açılıyor.  
+Sonra vites D ye geçerse 1-3 pistonu zaten açık oluğu için K1 pistonu açılır ama 2. vitese hazırlamak için önce 
+R pistonu orta pozisyona getirilir ve 2-4 Pistonu orta pozisyondan açık pozisyona gelir. 
+Normalde bundan sonrası için arabalarda birde tek ve çift vites şaftlarının hızını okuyan sensörler var. 
+bunların hızları eşitlenince kavrama değişimi olup 2. vitese geçer ama biz GUI üzerinden seçilecek 1.5sn, 
+2sn ve 5sn lik vites geçiş süreleri ile vites geçişlerini ayarlıyacağız.  Devamında da aslında aynı mantıkla devam eder. 
+Onlarıda hızlıca anlatayım. şimdi birinci vitesteyiz. 1-3 pistonu açık K1 pistonu da açık K2 pistonu kapalı. 
+Ayrıca 2. vitesi hazırlamak için 2-4 pistonu da açılacak ve GUI de ayarlanan süre kadar bekleyip K1 kapatılacak 
+ve k2 açılacak bu sayede 2. vitese geçecek. 1-3 pistonu 3. vitesi hazırlamak için kapanacak. Guı de ayarladığımız 
+süre kadar bekleyip K2 kapanıp k1 açılacak ve bu sayede 3. vitese geçecek. Mantık bu şekilde 7. vitese kadar devam 
+edecek ve 7. vitese gelince bekleme süresinin 2 katı bekleyip geri 1. vitese kadar sıra ile aynı mantıkla düşecek. 
+Bu sırada diğer kullanılmayan ve aynı şafta denk gelen vites pistonları orta konumda duracak. Tabi birde hall sensörü 
+ve akım sensörü okumaları var. hall sensörleri ile konum aktif olarak sürekli okunacak ve pistonlar olması gereken 
+pozisyonda değilse o pistonun valfi düzgün çalışmıyor gibi bi mesaj ile GUI de uyarı olarak mesaj kayıtları bölümüne 
+yazılacak.  aynı zamanda ana basınç valfleri arabada 1000mA civarında çalışıyor. diğer valfler pistonu açmak için 
+650-800 mA arası akımda çalışıyor, yani PWM değerleri bu akım değerlerine göre ayarlanmalı. 
+Birde aklımda Otomatik kontrol için şöyle bir şey var; Vites tarzı bişey koyup ileri geri hareket ettirerek P R N D 
+ve manuel kontrol için de D de iken sola çekip D1-D2-D3-D4-D5-D6-D7 şeklinde gene kaydırarak ayarlama falan yapabilir miyiz. 

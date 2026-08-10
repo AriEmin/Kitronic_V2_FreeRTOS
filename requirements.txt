@@ -1,0 +1,9 @@
+# Kitronic DSG Tester GUI - Bağımlılıklar
+# Python 3.8+ gereklidir
+
+PyQt5>=5.15.0
+pyserial>=3.5
+pyqtgraph>=0.13.0
+
+# Opsiyonel - daha iyi performans için
+numpy>=1.21.0

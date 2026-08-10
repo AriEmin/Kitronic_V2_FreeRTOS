@@ -1,0 +1,47 @@
+# PlatformIO / build
+.pio/
+.pioenvs/
+.piolibdeps/
+**/.pio/
+platformio.ini.user
+
+# VSCode local settings
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.venv
+.venv/
+venv/
+env/
+ENV/
+dist/
+build/
+*.egg-info/
+.eggs/
+*.spec
+*.bat
+
+# Python deneme / araç dosyaları
+animate_*.py
+list_nodes_*.py
+mekatronik.glb
+Deneme_*.png
+compile_commands.json
+
+# Backup klasörleri
+backup_*/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log
+*.log
+logs/
