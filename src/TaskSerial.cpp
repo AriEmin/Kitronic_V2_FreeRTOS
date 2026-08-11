@@ -1946,6 +1946,12 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
       else if (!strcasecmp(modeStr, "pcv"))        { modeCode = 5; targetMa = tgt.pcvCurrent_mA; }
       // "off" -> targetMa = 0, modeCode = 0
 
+      // GUI'den gönderilen özel akım hedefi varsa kullan (deneme/override)
+      float customMa = j["mA"] | 0.0f;
+      if (customMa > 0.0f) {
+        targetMa = customMa;
+      }
+
       // Güvenlik kontrolü: N433 (idx 0) açılmadan önce N436 (PCV) açık mı?
       if (idx == 0 && targetMa > 0.0f && !g_manufacturerMode) {
         float pcvMa = 0.0f;
