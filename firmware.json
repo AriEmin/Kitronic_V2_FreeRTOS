@@ -1,0 +1,21 @@
+{
+    "version": "1.0.0",
+    "release_notes": "Kitronic V2 FreeRTOS ilk firmware sürümü. Binary dosyalar GitHub Release'ten indirilir.",
+    "binaries": [
+        {
+            "name": "bootloader.bin",
+            "offset": "0x0",
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.0/bootloader.bin"
+        },
+        {
+            "name": "partitions.bin",
+            "offset": "0x8000",
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.0/partitions.bin"
+        },
+        {
+            "name": "firmware.bin",
+            "offset": "0x10000",
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.0/firmware.bin"
+        }
+    ]
+}
