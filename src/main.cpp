@@ -123,6 +123,8 @@ void setup() {
 
     xTaskCreatePinnedToCore(TaskOLED, "TaskOLED", 4096, NULL, 1, NULL, 1); // I2C OLED durum ekranı
 
+    xTaskCreatePinnedToCore(TaskButtonPad, "TaskButtonPad", 4096, NULL, 1, NULL, 1); // TCA9555 @ 0x22 buton paneli
+
 
 
 

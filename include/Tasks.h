@@ -383,4 +383,6 @@ void TaskAutoTest(void *pvParameters);       // 9-Fazlı Otomatik Test
 
 void TaskOLED(void *pvParameters);           // I2C OLED durum ekranı
 
+void TaskButtonPad(void *pvParameters);      // TCA9555 @ 0x22 buton paneli
+
 
