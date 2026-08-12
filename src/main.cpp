@@ -121,6 +121,8 @@ void setup() {
 
     xTaskCreatePinnedToCore(TaskAutoTest, "TaskAutoTest", 8192, NULL, 3, NULL, 1); // 9-Fazlı Otomatik Test
 
+    xTaskCreatePinnedToCore(TaskOLED, "TaskOLED", 4096, NULL, 1, NULL, 1); // I2C OLED durum ekranı
+
 
 
 

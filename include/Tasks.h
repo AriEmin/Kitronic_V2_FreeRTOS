@@ -381,4 +381,6 @@ void TaskCurrentCalib(void *pvParameters);   // holdcontrol_V2 akım kalibrasyon
 
 void TaskAutoTest(void *pvParameters);       // 9-Fazlı Otomatik Test
 
+void TaskOLED(void *pvParameters);           // I2C OLED durum ekranı
+
 
