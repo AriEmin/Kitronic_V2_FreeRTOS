@@ -1,21 +1,21 @@
 {
-    "version": "1.0.3-test",
-    "release_notes": "hw_test V2 op ve otomatik donanim kontrolu test",
+    "version": "1.0.4-test",
+    "release_notes": "Yeni build: V2 protokol, hw_test, otomatik donanim kontrolu",
     "binaries": [
         {
             "name": "bootloader.bin",
             "offset": "0x0",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.3-test/bootloader.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.4-test/bootloader.bin"
         },
         {
             "name": "partitions.bin",
             "offset": "0x8000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.3-test/partitions.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.4-test/partitions.bin"
         },
         {
             "name": "firmware.bin",
             "offset": "0x10000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.3-test/firmware.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.4-test/firmware.bin"
         }
     ]
 }
