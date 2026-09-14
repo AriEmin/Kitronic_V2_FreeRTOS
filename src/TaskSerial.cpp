@@ -1730,10 +1730,13 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
       char msg[64];
       if (on && busy) {
         snprintf(msg, sizeof(msg), "[VCLEAN] REJECTED: SYSTEM BUSY");
+        response["ok"] = false;
+        response["error"] = "system_busy";
       } else {
         snprintf(msg, sizeof(msg), "[VCLEAN] ch%d %s period=%dms", ch, on ? "ON" : "OFF", period);
       }
       kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
+      response["op"] = "valve_clean";
       response["ch"] = ch;
       response["on"] = g_valveClean.ch[ch].active;
       response["period"] = g_valveClean.ch[ch].period_ms;
