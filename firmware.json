@@ -1,21 +1,21 @@
 {
-    "version": "1.0.5-test",
-    "release_notes": "V2 valve_clean op",
+    "version": "1.0.6-test",
+    "release_notes": "V2 valve_clean op with busy rejection",
     "binaries": [
         {
             "name": "bootloader.bin",
             "offset": "0x0",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.5-test/bootloader.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.6-test/bootloader.bin"
         },
         {
             "name": "partitions.bin",
             "offset": "0x8000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.5-test/partitions.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.6-test/partitions.bin"
         },
         {
             "name": "firmware.bin",
             "offset": "0x10000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.5-test/firmware.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.6-test/firmware.bin"
         }
     ]
 }
