@@ -2074,10 +2074,9 @@ static inline void PWM_WriteDuty(int idx, uint16_t duty){
     if (idx < 0 || idx > 7) return;
     if (duty > DUTY_MAX) duty = DUTY_MAX;
     ledcWrite(VALVE_CH[idx], duty);
-    if (xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-            g_valveDutyCounts[idx]=duty;
-            xSemaphoreGive(g_sharedMutex);
-        }
+    portENTER_CRITICAL(&g_portMux);
+    g_valveDutyCounts[idx] = duty;
+    portEXIT_CRITICAL(&g_portMux);
     
 
 }
@@ -3082,6 +3081,7 @@ void TaskValveControl(void *pvParameters){
     DRV_PresetAll();
     PWM_InitAll();
     PistonRefPrefs_LoadAll();
+    ValveCurrentControl_Init();
     
     {
         char buf[96];
@@ -3360,9 +3360,12 @@ void TaskValveControl(void *pvParameters){
         // 2. Manuel close/close_slow: piston kapandiginda akimi kes
         autoStopCloseCurrent();
 
-        // 3. INA PI regülatörü: g_valveCustomCurrent_mA → PWM (V=IR YOK)
+        // 3. Akım geri beslemeli PI regülatörü: ValveCurrentControl modülü
         uint16_t target[8] = {};
-        valve_current_reg_step(target, dt_s);
+        for (int vi = 0; vi < 8; vi++) {
+            float measured = fabsf(g_tele.inaI_mA[VALVE_TO_INA_V2[vi]]);
+            target[vi] = ValveCurrentControl_Update(vi, measured);
+        }
 
         // 4. Geriye dönük uyumluluk: g_valveCustomCurrent_mA=0 iken g_valveTargetDuty>0
         //    → doğrudan duty override (TaskAutoShiftV2 vb. eski kodlar)

@@ -40,27 +40,12 @@ static const char* resetReasonStr(esp_reset_reason_t r) {
     }
 }
 
-// UART0 (GPIO43/44) test/echo bridge - RPi GPIO14/15 ile iletişimi doğrulamak için
-static void TaskSerial0Bridge(void *pvParameters) {
-    (void)pvParameters;
-    for (;;) {
-        while (Serial0.available()) {
-            char c = (char)Serial0.read();
-            Serial0.write(c);  // echo
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-}
-
-
-
 void setup() {
 
     Serial.setRxBufferSize(2048);
     Serial.begin(115200);
 
-    // UART0 test bridge (GPIO43 TX, GPIO44 RX) - RPi GPIO14/15 ile haberleşme testi
-    Serial0.setRxBufferSize(512);
+    Serial0.setRxBufferSize(2048);
     Serial0.begin(115200);
 
     // Serialin hazır olmasını bekle (kısa)
@@ -140,8 +125,6 @@ void setup() {
     xTaskCreatePinnedToCore(TaskOLED, "TaskOLED", 4096, NULL, 1, NULL, 1); // I2C OLED durum ekranı
 
     xTaskCreatePinnedToCore(TaskButtonPad, "TaskButtonPad", 4096, NULL, 1, NULL, 1); // TCA9555 @ 0x22 buton paneli
-
-    xTaskCreatePinnedToCore(TaskSerial0Bridge, "S0Bridge", 2048, NULL, 1, NULL, 1); // UART0 (GPIO43/44) - RPi echo test
 
 
 

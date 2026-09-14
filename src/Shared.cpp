@@ -30,6 +30,9 @@ uint16_t g_valveDutyCounts[8]   = {0};
 uint16_t g_valveTargetDuty[8]         = {0};
 float    g_valveCustomCurrent_mA[8]   = {0}; // Per-valf özel akım hedefi (0=devre dışı)
 uint8_t  g_valveCustomMode[8]         = {0}; // 0=off,1=open,2=close,3=open_slow,4=close_slow,5=pcv
+ButtonDisplayEvent g_buttonDisplayEvent = {};
+ControlSessionState g_controlSession = {};
+uint8_t g_uiLanguage = 0;
 
 // ADS/Analog
 float g_pressure0_V = 0.0f, g_pressure1_V = 0.0f;

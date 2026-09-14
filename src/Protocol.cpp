@@ -17,8 +17,8 @@ static uint8_t nextSeq() {
 
 static void sendFrameNonBlock(const uint8_t* frame, size_t len) {
   if (len == 0) return;
-  if (Serial.availableForWrite() >= (int)len) {
-    Serial.write(frame, len);
+  if (Serial0.availableForWrite() >= (int)len) {
+    Serial0.write(frame, len);
   }
 }
 
@@ -30,11 +30,11 @@ static void sendFrameReliable(const uint8_t* frame, size_t len, uint32_t timeout
   uint32_t start = millis();
   size_t sent = 0;
   while (sent < len) {
-    int avail = Serial.availableForWrite();
+    int avail = Serial0.availableForWrite();
     if (avail > 0) {
       size_t chunk = len - sent;
       if ((size_t)avail < chunk) chunk = (size_t)avail;
-      size_t written = Serial.write(frame + sent, chunk);
+      size_t written = Serial0.write(frame + sent, chunk);
       if (written > 0) sent += written;
     }
     if (sent >= len) break;

@@ -3,6 +3,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <U8g2lib.h>
+#include <string.h>
 
 #include "Tasks.h"
 #include "Shared.h"
@@ -10,9 +11,9 @@
 // HS96L03W2C03: 128x64 I2C OLED, adres 0x3C
 static U8G2_SSD1306_128X64_NONAME_F_HW_I2C g_u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
-// Pressure conversion: g_pressure0_V * 100 -> bar (matches TelemetrySensor in TaskSerial.cpp)
+// Pressure conversion: filtered pressure value produced by TaskBLDCPump
 static inline float pressureBar() {
-    return g_pressure0_V * 100.0f;
+    return g_pumpPub.bar;
 }
 
 // I2C mutex wrapper
@@ -23,6 +24,25 @@ static bool i2cLock(TickType_t timeout) {
 
 static void i2cUnlock() {
     if (g_i2cMutex) xSemaphoreGive(g_i2cMutex);
+}
+
+static const char *translateButtonText(const char *text, uint8_t language) {
+    if (language != 1) return text;
+    if (!strcmp(text, "ACIK")) return "OPEN";
+    if (!strcmp(text, "KAPALI")) return "CLOSED";
+    if (!strcmp(text, "BASLADI")) return "STARTED";
+    if (!strcmp(text, "DURDU")) return "STOPPED";
+    if (!strcmp(text, "OTOMATIK")) return "AUTO";
+    if (!strcmp(text, "MESGUL")) return "BUSY";
+    if (!strcmp(text, "ISLEM AKTIF")) return "BUSY";
+    if (!strcmp(text, "10 BAR ALTI")) return "BELOW 10 BAR";
+    if (!strcmp(text, "BOSALTILIYOR")) return "DRAINING";
+    if (!strcmp(text, "GIRIS GEREKLI")) return "LOGIN REQUIRED";
+    if (!strcmp(text, "YAG DOLUM")) return "OIL FILL";
+    if (!strcmp(text, "BASINC")) return "PRESSURE";
+    if (!strcmp(text, "TEMIZLEME")) return "CLEANING";
+    if (!strcmp(text, "SISTEM")) return "SYSTEM";
+    return text;
 }
 
 void TaskOLED(void *pvParameters) {
@@ -47,46 +67,52 @@ void TaskOLED(void *pvParameters) {
         i2cUnlock();
     }
 
-    char line0[32];
-    char line1[32];
-    char line2[32];
+    char pressure[16];
+    ButtonDisplayEvent event{};
 
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(250));
+        vTaskDelay(pdMS_TO_TICKS(100));
 
         float bar = 0.0f;
-        float mainV = 0.0f;
-        bool ocp = false;
-
+        bool sessionActive = false;
+        uint8_t language = 0;
         if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             bar = pressureBar();
-            mainV = g_mainPwrVoltage_V;
+            event = g_buttonDisplayEvent;
+            sessionActive = g_controlSession.active;
+            language = g_uiLanguage;
             xSemaphoreGive(g_sharedMutex);
         }
 
-        // OCP latch is volatile; read with critical section for size-safe access
-        portENTER_CRITICAL(&g_portMux);
-        ocp = g_drvOcpLatch;
-        portEXIT_CRITICAL(&g_portMux);
-
-        snprintf(line0, sizeof(line0), "Basinc: %.1f bar", (double)bar);
-        snprintf(line1, sizeof(line1), "Main V: %.1f V", (double)mainV);
-        if (ocp) {
-            snprintf(line2, sizeof(line2), "UYARI: OCP AKTIF");
-        } else {
-            snprintf(line2, sizeof(line2), "Sistem Normal");
-        }
-
+        bool showEvent = sessionActive && event.seq != 0 && millis() - event.timestampMs < 3000;
         if (display_ok && i2cLock(pdMS_TO_TICKS(200))) {
             g_u8g2.clearBuffer();
-            g_u8g2.setFont(u8g2_font_9x18B_tf);
-            g_u8g2.drawStr(0, 18, line0);
-            g_u8g2.setFont(u8g2_font_7x14_tf);
-            g_u8g2.drawStr(0, 40, line1);
-            if (ocp) {
-                g_u8g2.drawStr(0, 58, line2);
+            if (!sessionActive) {
+                snprintf(pressure, sizeof(pressure), "%.1f", (double)bar);
+                g_u8g2.setFont(u8g2_font_logisoso24_tn);
+                int xPressure = (128 - g_u8g2.getStrWidth(pressure)) / 2;
+                g_u8g2.drawStr(xPressure > 0 ? xPressure : 0, 27, pressure);
+                g_u8g2.setFont(u8g2_font_6x13B_tf);
+                const char *message = language == 1 ? "UNLOCK DEVICE" : "KILIDI ACIN";
+                int xMessage = (128 - g_u8g2.getStrWidth(message)) / 2;
+                g_u8g2.drawStr(xMessage > 0 ? xMessage : 0, 55, message);
+            } else if (showEvent) {
+                const char *button = translateButtonText(event.button, language);
+                const char *state = translateButtonText(event.state, language);
+                g_u8g2.setFont(u8g2_font_9x18B_tf);
+                int xButton = (128 - g_u8g2.getStrWidth(button)) / 2;
+                g_u8g2.drawStr(xButton > 0 ? xButton : 0, 24, button);
+                g_u8g2.setFont(u8g2_font_10x20_tf);
+                int xState = (128 - g_u8g2.getStrWidth(state)) / 2;
+                g_u8g2.drawStr(xState > 0 ? xState : 0, 53, state);
             } else {
-                g_u8g2.drawStr(0, 58, line2);
+                snprintf(pressure, sizeof(pressure), "%.1f", (double)bar);
+                g_u8g2.setFont(u8g2_font_logisoso32_tn);
+                int xPressure = (128 - g_u8g2.getStrWidth(pressure)) / 2;
+                g_u8g2.drawStr(xPressure > 0 ? xPressure : 0, 40, pressure);
+                g_u8g2.setFont(u8g2_font_7x14B_tf);
+                int xBar = (128 - g_u8g2.getStrWidth("bar")) / 2;
+                g_u8g2.drawStr(xBar, 62, "bar");
             }
             g_u8g2.sendBuffer();
             i2cUnlock();

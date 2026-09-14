@@ -1,4 +1,4 @@
-// src/TaskSerial.cpp
+// src/TaskSerial0.cpp
 #define KEEP_REAL_SERIAL
 #include "SerialJSON.h"
 
@@ -65,8 +65,22 @@ static uint8_t  g_txSeq = 0;
 // ======= Frame gönderim: USB CDC TX buffer müsaitse non-blocking yaz =======
 static void sendFrame(const uint8_t* frame, size_t len) {
   if (len == 0) return;
-  if (Serial.availableForWrite() >= (int)len) {
-    Serial.write(frame, len);
+  if (Serial0.availableForWrite() >= (int)len) {
+    Serial0.write(frame, len);
+  }
+}
+
+static void sendFrameReliable(const uint8_t* frame, size_t len, uint32_t timeoutMs = 50) {
+  uint32_t start = millis();
+  size_t sent = 0;
+  while (sent < len && millis() - start < timeoutMs) {
+    int available = Serial0.availableForWrite();
+    if (available > 0) {
+      size_t chunk = min((size_t)available, len - sent);
+      sent += Serial0.write(frame + sent, chunk);
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
   }
 }
 
@@ -74,7 +88,7 @@ static void sendFrame(const uint8_t* frame, size_t len) {
 static void sendMsgSensor() {
   kitronic::TelemetrySensor s{};
   s.timestamp_ms = (uint32_t)millis();
-  s.p0_bar = (int16_t)roundf(g_pressure0_V * 100.0f);
+  s.p0_bar = (int16_t)roundf(g_pumpPub.bar * 100.0f);
   s.p1_bar = (int16_t)roundf(g_pressure1_V * 100.0f);
   s.t1_C   = (int16_t)roundf(g_temp1_C * 100.0f);
   s.t2_C   = (int16_t)roundf(g_temp2_C * 100.0f);
@@ -82,8 +96,8 @@ static void sendMsgSensor() {
   s.h57_mm = (int16_t)roundf(g_piston_5_7_mm * 10.0f);
   s.h24_mm = (int16_t)roundf(g_piston_2_4_mm * 10.0f);
   s.h6R_mm = (int16_t)roundf(g_piston_6_R_mm * 10.0f);
-  s.hK1_mm = (int16_t)roundf(g_n435_stroke_mm * 10.0f);
-  s.hK2_mm = (int16_t)roundf(g_n439_stroke_mm * 10.0f);
+  s.hK1_mm = (int16_t)roundf(g_pistonHallmm[PISTON_K1] * 10.0f);
+  s.hK2_mm = (int16_t)roundf(g_pistonHallmm[PISTON_K2] * 10.0f);
   s.tm13 = g_tmagData[TMAG_CH_1_3].valid ? g_tmagData[TMAG_CH_1_3].z : 0;
   s.tm57 = g_tmagData[TMAG_CH_5_7].valid ? g_tmagData[TMAG_CH_5_7].z : 0;
   s.tm24 = g_tmagData[TMAG_CH_2_4].valid ? g_tmagData[TMAG_CH_2_4].z : 0;
@@ -123,16 +137,6 @@ static void sendMsgPiston() {
 
 // ======= TİP I: INA Valf Akımları (binary) =======
 static void sendMsgINA() {
-  // Sadece aktif valf varsa gönder
-  bool anyActive = false;
-  for (int i = 0; i < 8; i++) {
-    if (fabsf(g_tele.inaI_mA[i]) > 1.0f || g_valveDutyCounts[i] > 0) {
-      anyActive = true;
-      break;
-    }
-  }
-  if (!anyActive) return;
-
   kitronic::TelemetryINA ina{};
   ina.timestamp_ms = (uint32_t)millis();
 
@@ -194,7 +198,61 @@ static void sendMsgVersion() {
   if (n > 0) sendFrame(frame, n);
 }
 
+static void sendStateV2() {
+  kitronic::TelemetryStateV2 s{};
+  s.timestamp_ms = millis();
+  s.session_id = g_controlSession.id;
+  s.session_active = g_controlSession.active ? 1 : 0;
+  s.session_role = g_controlSession.role;
+  s.operation = (g_valveClean.ch[0].active || g_valveClean.ch[1].active) ? 2 : (g_autoTestResult.running ? 3 : 0);
+  s.flags = g_drvOcpLatch ? 1 : 0;
+  s.pressure_bar = (int16_t)roundf(g_pumpPub.bar * 100.0f);
+  s.temperature_C = (int16_t)roundf(g_temp1_C * 100.0f);
+
+  static const uint8_t pistonTmag[6] = {
+    TMAG_CH_5_7, TMAG_CH_1_3, TMAG_CH_2_4, TMAG_CH_6_R, TMAG_CH_K1_1, TMAG_CH_K2_1
+  };
+  for (int i = 0; i < 6; i++) {
+    s.piston_raw[i] = g_tmagData[pistonTmag[i]].z;
+    s.piston_mm[i] = (int16_t)roundf(g_pistonHallmm[i] * 10.0f);
+    if (g_tmagData[pistonTmag[i]].valid) s.piston_valid_mask |= (1u << i);
+  }
+
+  static const uint8_t valveToIna[8] = {0, 3, 1, 2, 5, 7, 6, 4};
+  static uint32_t lowCurrentSince[8] = {};
+  for (int i = 0; i < 8; i++) {
+    uint8_t ina = valveToIna[i];
+    float current = fabsf(g_tele.inaI_mA[ina]);
+    uint16_t duty = g_valveDutyCounts[i];
+    s.valve_current_mA[i] = (int16_t)roundf(current);
+    s.valve_duty[i] = duty;
+    s.valve_mode[i] = g_valveCustomMode[i];
+    if (duty >= 300 && current < 100.0f) {
+      if (lowCurrentSince[i] == 0) lowCurrentSince[i] = s.timestamp_ms;
+      if (s.timestamp_ms - lowCurrentSince[i] >= 800) s.valve_fault[i] = 1;
+    } else {
+      lowCurrentSince[i] = 0;
+      s.valve_fault[i] = 0;
+    }
+  }
+  s.pump_rpm = (int16_t)g_pumpPub.rpm;
+  s.pump_mode = g_pumpPub.mode;
+
+  static uint8_t frame[128];
+  size_t n = kitronic::encodeTelemetry(frame, sizeof(frame), kitronic::FT_V2_STATE, g_txSeq++, &s);
+  if (n > 0) sendFrameReliable(frame, n);
+}
+
 // ======= MessagePack yardımcı: FT_RESULT frame gönder =======
+static void sendV2Response(const JsonDocument& doc) {
+  static uint8_t payload[256];
+  size_t n = serializeMsgPack(doc, payload, sizeof(payload));
+  if (n == 0 || n >= sizeof(payload)) return;
+  static uint8_t frame[264];
+  size_t fn = kitronic::encodeFrame(frame, sizeof(frame), kitronic::FT_V2_RESPONSE, g_txSeq++, payload, (uint16_t)n);
+  if (fn > 0) sendFrame(frame, fn);
+}
+
 static void sendMsgPackResult(const JsonDocument& doc) {
   static uint8_t payload[MSG_BUF_LARGE];
   size_t n = serializeMsgPack(doc, payload, sizeof(payload));
@@ -1492,6 +1550,69 @@ static void handlePistonCalibClear(int idx){
 //     kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
 //   }
 // }
+static void appendMissing(String& s, const char* name) {
+  if (!s.isEmpty()) s += ',';
+  s += name;
+}
+
+static void doHwTest(String& missing) {
+  missing = "";
+  if (!g_i2cMutex) { missing += "I2C_BUS"; return; }
+  if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    missing += "I2C_TIMEOUT";
+    return;
+  }
+
+  const uint8_t ina219_addrs[] = {0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47};
+  const char* ina219_names[] = {"N433","N434","N435","N436","N437","N438","N439","N440"};
+  for (int i = 0; i < 8; i++) {
+    Wire.beginTransmission(ina219_addrs[i]);
+    if (Wire.endTransmission() != 0) appendMissing(missing, ina219_names[i]);
+  }
+
+  const uint8_t ina226_addrs[] = {0x4C, 0x4D};
+  const char* ina226_names[] = {"ANA_GUC","VESC_GUC"};
+  for (int i = 0; i < 2; i++) {
+    Wire.beginTransmission(ina226_addrs[i]);
+    if (Wire.endTransmission() != 0) appendMissing(missing, ina226_names[i]);
+  }
+
+  const uint8_t tca_addrs[] = {0x20, 0x21};
+  const char* tca_names[] = {"IO1","IO2"};
+  for (int i = 0; i < 2; i++) {
+    Wire.beginTransmission(tca_addrs[i]);
+    if (Wire.endTransmission() != 0) appendMissing(missing, tca_names[i]);
+  }
+
+  Wire.beginTransmission(0x70);
+  bool mux_ok = (Wire.endTransmission() == 0);
+  if (!mux_ok) {
+    appendMissing(missing, "TMAG_MUX");
+  } else {
+    const char* tmag_names[] = {"TMAG_1_3","TMAG_5_7","TMAG_2_4","TMAG_6_R","TMAG_K1_1","TMAG_K1_2","TMAG_K2_1","TMAG_K2_2"};
+    for (uint8_t ch = 0; ch < 8; ch++) {
+      Wire.beginTransmission(0x70);
+      Wire.write(1u << ch);
+      Wire.endTransmission();
+      vTaskDelay(pdMS_TO_TICKS(2));
+      Wire.beginTransmission(0x35);
+      if (Wire.endTransmission() != 0) appendMissing(missing, tmag_names[ch]);
+    }
+    Wire.beginTransmission(0x70);
+    Wire.write(0x00);
+    Wire.endTransmission();
+  }
+
+  xSemaphoreGive(g_i2cMutex);
+
+  DRV8243Status drvStatus[4];
+  DRV_GetAllStatus(drvStatus);
+  const char* drv_names[] = {"DRV1","DRV2","DRV3","DRV4"};
+  for (int i = 0; i < 4; i++) {
+    if (!drvStatus[i].ok) appendMissing(missing, drv_names[i]);
+  }
+}
+
 static void applySSR(const JsonVariant& v) {
   // {"ssr": true/false}
   bool on = v.as<bool>();
@@ -1521,6 +1642,114 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     }
     return;
   }
+
+  if ((doc["v"] | 0) == 2 && doc["op"].is<const char*>()) {
+    const char *op = doc["op"].as<const char*>();
+    uint32_t requestId = doc["id"] | 0;
+    JsonDocument response;
+    response["v"] = 2;
+    response["id"] = requestId;
+    response["ok"] = true;
+
+    if (!strcmp(op, "ui.language")) {
+      const char *lang = doc["lang"] | "tr";
+      g_uiLanguage = !strcmp(lang, "en") ? 1 : 0;
+    } else if (!strcmp(op, "session.open")) {
+      const char *lang = doc["lang"] | "tr";
+      g_uiLanguage = !strcmp(lang, "en") ? 1 : 0;
+      g_controlSession.active = true;
+      g_controlSession.role = !strcmp(doc["role"] | "user", "service") ? 2 : 1;
+      g_controlSession.id = ((uint32_t)millis() << 8) ^ (uint32_t)esp_random();
+      if (g_controlSession.id == 0) g_controlSession.id = 1;
+      g_controlSession.lastKeepaliveMs = millis();
+      response["session"] = g_controlSession.id;
+      response["timeout_ms"] = 3000;
+    } else if (!strcmp(op, "session.keepalive")) {
+      uint32_t session = doc["session"] | (uint32_t)0;
+      if (!g_controlSession.active || session != g_controlSession.id) {
+        response["ok"] = false;
+        response["error"] = "invalid_session";
+      } else {
+        g_controlSession.lastKeepaliveMs = millis();
+      }
+    } else if (!strcmp(op, "session.close")) {
+      g_controlSession.active = false;
+      g_controlSession.id = 0;
+      g_controlSession.lastKeepaliveMs = 0;
+      for (int i = 0; i < 8; i++) {
+        g_valveCustomCurrent_mA[i] = 0.0f;
+        g_valveTargetDuty[i] = 0;
+        g_valveCustomMode[i] = 0;
+      }
+      g_valveClean.ch[0].active = false;
+      g_valveClean.ch[1].active = false;
+      portENTER_CRITICAL(&g_portMux);
+      g_pumpCmd.cmd = PUMP_CMD_STOP;
+      g_pumpCmd.seq++;
+      portEXIT_CRITICAL(&g_portMux);
+    } else if (!strcmp(op, "valve.set")) {
+      uint32_t session = doc["session"] | (uint32_t)0;
+      int valve = doc["valve"] | -1;
+      bool on = doc["on"] | false;
+      if (!g_controlSession.active || session != g_controlSession.id) {
+        response["ok"] = false;
+        response["error"] = "invalid_session";
+      } else if (valve < 0 || valve >= 8) {
+        response["ok"] = false;
+        response["error"] = "invalid_valve";
+      } else {
+        g_valveTargetDuty[valve] = 0;
+        g_valveCustomMode[valve] = on ? 1 : 0;
+        g_valveCustomCurrent_mA[valve] = on ? 700.0f : 0.0f;
+        g_controlSession.lastKeepaliveMs = millis();
+      }
+    } else if (!strcmp(op, "tmag_calib")) {
+      const char* pistonStr = doc["piston"] | "";
+      const char* state = doc["state"] | "closed";
+      bool isOpen = !strcasecmp(state, "open");
+      int pistonIdx = -1;
+      if (!strcasecmp(pistonStr, "k1")) pistonIdx = 0;
+      else if (!strcasecmp(pistonStr, "k2")) pistonIdx = 1;
+
+      if (pistonIdx >= 0) {
+        uint8_t ch1 = (pistonIdx == 0) ? TMAG_CH_K1_1 : TMAG_CH_K2_1;
+        uint8_t ch2 = (pistonIdx == 0) ? TMAG_CH_K1_2 : TMAG_CH_K2_2;
+        if (isOpen) {
+          g_tmagKavramaCalib[pistonIdx].sensor1_open = g_tmagData[ch1].z;
+          g_tmagKavramaCalib[pistonIdx].sensor2_open = g_tmagData[ch2].z;
+          g_tmagKavramaCalib[pistonIdx].strokeMm = 30.0f;
+          g_tmagKavramaCalib[pistonIdx].valid = true;
+        } else {
+          g_tmagKavramaCalib[pistonIdx].sensor1_closed = g_tmagData[ch1].z;
+          g_tmagKavramaCalib[pistonIdx].sensor2_closed = g_tmagData[ch2].z;
+        }
+        g_tmagCalibSeq++;
+        TMAGCalib_SaveKavrama(pistonIdx);
+
+        char msg[80];
+        snprintf(msg, sizeof(msg), "[TMAG_CAL] K%d %s: s1=%d s2=%d SAVED",
+                 pistonIdx + 1, isOpen ? "OPEN" : "CLOSED",
+                 g_tmagData[ch1].z, g_tmagData[ch2].z);
+        kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
+      } else {
+        response["ok"] = false;
+        response["error"] = "invalid_piston";
+      }
+    } else if (!strcmp(op, "hw_test")) {
+      String missing;
+      doHwTest(missing);
+      response["op"] = "hw_test";
+      response["all_ok"] = missing.isEmpty();
+      response["missing"] = missing.c_str();
+    } else {
+      response["ok"] = false;
+      response["error"] = "unknown_v2_op";
+    }
+    sendV2Response(response);
+    return;
+  }
+
+  if (!g_controlSession.active) return;
 
   if (doc["cmd"].is<const char*>()) {
     const char* c = doc["cmd"].as<const char*>();
@@ -2206,14 +2435,28 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     if (period < 20) period = 20;
     if (period > 1000) period = 1000;
     
-    g_valveClean.ch[ch].active = on;
-    g_valveClean.ch[ch].period_ms = period;
+    bool busy = false;
+    if (on && g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+      busy = fabsf(g_pumpPub.rpm) > 50.0f;
+      for (int i = 0; i < 8 && !busy; i++) {
+        busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+      }
+      xSemaphoreGive(g_sharedMutex);
+    }
+    if (!on || !busy) {
+      g_valveClean.ch[0].active = on;
+      g_valveClean.ch[1].active = on;
+      g_valveClean.ch[0].period_ms = period;
+      g_valveClean.ch[1].period_ms = period;
+    }
     
     char msg[64];
-    if (on) {
-      snprintf(msg, sizeof(msg), "[VCLEAN] CH%d ON period=%dms", ch+1, period);
+    if (on && busy) {
+      snprintf(msg, sizeof(msg), "[VCLEAN] REJECTED: SYSTEM BUSY");
+    } else if (on) {
+      snprintf(msg, sizeof(msg), "[VCLEAN] BOTH ON period=%dms", period);
     } else {
-      snprintf(msg, sizeof(msg), "[VCLEAN] CH%d OFF", ch+1);
+      snprintf(msg, sizeof(msg), "[VCLEAN] BOTH OFF");
     }
     kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
   }
@@ -3164,8 +3407,8 @@ static bool tryReadOneFrame(uint8_t* outBuf, size_t outMax, size_t& outLen, uint
   static bool inFrame = false;
   static uint16_t expectedLen = 0;
 
-  while (Serial.available()) {
-    int c = Serial.read();
+  while (Serial0.available()) {
+    int c = Serial0.read();
     if (c < 0) break;
 
     if (!inFrame) {
@@ -3232,17 +3475,18 @@ static bool tryReadOneFrame(uint8_t* outBuf, size_t outMax, size_t& outLen, uint
 void TaskSerial(void *pvParameters) {
   (void)pvParameters;
 
-  Serial.setTimeout(5);
+  Serial0.setTimeout(5);
   static uint8_t rx[RX_BUF_MAX];
   size_t rxLen = 0;
   uint8_t rxType = 0;
 
   uint32_t lastTx = 0;
+  uint32_t lastV2Tx = 0;
   static const uint32_t TX_PERIOD_MS = 100;   // JSON telemetri gönderim periyodu (10 Hz - 5x hızlı)
   lastTx = millis() - TX_PERIOD_MS;   // ilk turda kesin gönder
 
   // Non-blocking satÄ±r toplayÄ±cÄ±
-  Serial.setTimeout(2);  // emniyet
+  Serial0.setTimeout(2);  // emniyet
 
   for (;;) {
     // 1) Binary frame komut var mi?
@@ -3254,6 +3498,25 @@ void TaskSerial(void *pvParameters) {
     if (now - lastTx >= TX_PERIOD_MS) {
       sendTelemetryJSON();
       lastTx = now;
+    }
+    if (now - lastV2Tx >= 200) {
+      sendStateV2();
+      lastV2Tx = now;
+    }
+    if (g_controlSession.active && now - g_controlSession.lastKeepaliveMs > 3000) {
+      g_controlSession.active = false;
+      g_controlSession.id = 0;
+      for (int i = 0; i < 8; i++) {
+        g_valveCustomCurrent_mA[i] = 0.0f;
+        g_valveTargetDuty[i] = 0;
+        g_valveCustomMode[i] = 0;
+      }
+      g_valveClean.ch[0].active = false;
+      g_valveClean.ch[1].active = false;
+      portENTER_CRITICAL(&g_portMux);
+      g_pumpCmd.cmd = PUMP_CMD_STOP;
+      g_pumpCmd.seq++;
+      portEXIT_CRITICAL(&g_portMux);
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));  // 10ms - TX queue hızlı boşalt (piston graph için)

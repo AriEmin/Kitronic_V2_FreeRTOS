@@ -48,13 +48,13 @@ struct ValveCurrentPIParams {
     float outputMax;         // PWM maksimum
 };
 
-// Varsayılan PI parametreleri (düşük kazanç - kararlılık için)
+// Varsayılan PI parametreleri (güncel V=IR deneyleriyle elde edilen değerler)
 static const ValveCurrentPIParams DEFAULT_PI_PARAMS = {
-    .Kp = 0.3f,           // Düşük oransal kazanç
-    .Ki = 0.05f,          // Çok düşük integral kazanç
-    .integralMax = 200.0f,
+    .Kp = 0.5f,           // duty/mA
+    .Ki = 6.0f,           // duty/(mA·s)
+    .integralMax = 4095.0f,
     .outputMin = 0.0f,
-    .outputMax = 4000.0f
+    .outputMax = 4095.0f
 };
 
 // Tek valf için kontrolör durumu

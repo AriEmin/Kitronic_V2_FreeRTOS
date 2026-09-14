@@ -52,7 +52,8 @@ enum ButtonAction {
     ACTION_PUMP_AUTO,
     ACTION_OIL_FILL,
     ACTION_OIL_FILL_STOP,
-    ACTION_DRAIN
+    ACTION_DRAIN,
+    ACTION_VALVE_CLEAN
 };
 
 static ButtonAction buttonToAction(uint8_t port, uint8_t bit) {
@@ -69,7 +70,7 @@ static ButtonAction buttonToAction(uint8_t port, uint8_t bit) {
         }
     } else if (port == 1) {
         switch (bit) {
-            case 2: return ACTION_OIL_FILL_STOP;
+            case 2: return ACTION_VALVE_CLEAN;
             case 3: return ACTION_PUMP_AUTO;
             default: return ACTION_NONE;
         }
@@ -110,6 +111,19 @@ static bool tcaWritePort(uint8_t reg, uint8_t value) {
     return err == 0;
 }
 
+static bool tcaInit() {
+    if (!g_i2cMutex) return false;
+    if (xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
+    Wire.beginTransmission(BTN_TCA_ADDR);
+    bool present = (Wire.endTransmission() == 0);
+    xSemaphoreGive(g_i2cMutex);
+    if (!present) return false;
+
+    return tcaWritePort(TCA_REG_CONFIG0, 0xFF) &&
+           tcaWritePort(TCA_REG_CONFIG1, 0xFC) &&
+           tcaWritePort(TCA_REG_OUTPUT1, 0xFF);
+}
+
 static void sendPumpCmd(PumpCmd cmd, float fillCurrentA = 0.0f, uint32_t fillDurationMs = 0) {
     PumpCommand pc;
     memset(&pc, 0, sizeof(pc));
@@ -123,8 +137,8 @@ static void sendPumpCmd(PumpCmd cmd, float fillCurrentA = 0.0f, uint32_t fillDur
     portEXIT_CRITICAL(&g_portMux);
 }
 
-static void toggleValve(int idx) {
-    if (idx < 0 || idx >= 8) return;
+static bool toggleValve(int idx) {
+    if (idx < 0 || idx >= 8) return false;
 
     uint8_t mode = 0;
     if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
@@ -132,16 +146,30 @@ static void toggleValve(int idx) {
         xSemaphoreGive(g_sharedMutex);
     }
 
-    // If currently open / slow_open / pcv -> close; otherwise open
-    uint8_t newMode = 2; // close/off by default
-    if (mode == 0 || mode == 2) {
-        newMode = 1; // open
-    }
+    // Açık değilse aç, açıksa kapat
+    bool turnOn = (mode == 0 || mode == 2);
 
     if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-        g_valveCustomCurrent_mA[idx] = 700.0f;
         g_valveTargetDuty[idx] = 0;
-        g_valveCustomMode[idx] = newMode;
+        if (turnOn) {
+            g_valveCustomCurrent_mA[idx] = 700.0f;
+            g_valveCustomMode[idx] = 1;           // open
+        } else {
+            g_valveCustomCurrent_mA[idx] = 0.0f;  // off
+            g_valveCustomMode[idx] = 0;           // off
+        }
+        xSemaphoreGive(g_sharedMutex);
+    }
+    return turnOn;
+}
+
+static void publishButtonEvent(const char *button, const char *state) {
+    if (!g_sharedMutex) return;
+    if (xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        snprintf(g_buttonDisplayEvent.button, sizeof(g_buttonDisplayEvent.button), "%s", button);
+        snprintf(g_buttonDisplayEvent.state, sizeof(g_buttonDisplayEvent.state), "%s", state);
+        g_buttonDisplayEvent.timestampMs = millis();
+        g_buttonDisplayEvent.seq++;
         xSemaphoreGive(g_sharedMutex);
     }
 }
@@ -160,31 +188,85 @@ static void loadOilFillDefaults(uint32_t &rpm, uint32_t &durationMs) {
 }
 
 static void doAction(ButtonAction action, int valveIdx) {
+    static const char *VALVE_NAMES[8] = {"N433", "N436", "N434", "N435", "N438", "N440", "N439", "N437"};
+    static bool oilFillActive = false;
+    if (!g_controlSession.active) {
+        publishButtonEvent("SISTEM", "GIRIS GEREKLI");
+        return;
+    }
+    bool cleanActive = g_valveClean.ch[0].active || g_valveClean.ch[1].active;
+    if (cleanActive && action != ACTION_VALVE_CLEAN) {
+        publishButtonEvent("TEMIZLEME", "MESGUL");
+        return;
+    }
     switch (action) {
-        case ACTION_VALVE_TOGGLE:
-            toggleValve(valveIdx);
+        case ACTION_VALVE_TOGGLE: {
+            bool opened = toggleValve(valveIdx);
+            publishButtonEvent(VALVE_NAMES[valveIdx], opened ? "ACIK" : "KAPALI");
             break;
+        }
         case ACTION_PUMP_START:
             sendPumpCmd(PUMP_CMD_START);
+            publishButtonEvent("POMPA", "ACIK");
             break;
         case ACTION_PUMP_STOP:
         case ACTION_OIL_FILL_STOP:
             sendPumpCmd(PUMP_CMD_STOP);
+            oilFillActive = false;
+            publishButtonEvent("POMPA", "KAPALI");
             break;
         case ACTION_PUMP_AUTO:
             sendPumpCmd(PUMP_CMD_AUTO);
+            publishButtonEvent("POMPA", "OTOMATIK");
             break;
         case ACTION_OIL_FILL: {
-            uint32_t rpm = 3500, durationMs = 60000;
-            loadOilFillDefaults(rpm, durationMs);
-            // Match GUI behavior: 'current' field carries RPM value, ms carries duration
-            sendPumpCmd(PUMP_CMD_FILL, (float)rpm, durationMs);
+            if (oilFillActive) {
+                sendPumpCmd(PUMP_CMD_STOP);
+                oilFillActive = false;
+                publishButtonEvent("YAG DOLUM", "DURDU");
+            } else {
+                uint32_t rpm = 3500, durationMs = 60000;
+                loadOilFillDefaults(rpm, durationMs);
+                // Match GUI behavior: 'current' field carries RPM value, ms carries duration
+                sendPumpCmd(PUMP_CMD_FILL, (float)rpm, durationMs);
+                oilFillActive = true;
+                publishButtonEvent("YAG DOLUM", "BASLADI");
+            }
             break;
         }
         case ACTION_DRAIN:
-            // Drain for 30 s at 2.0 A; stop manually if needed
-            sendPumpCmd(PUMP_CMD_DRAIN, 2.0f, 30000);
+            if (g_pumpPub.bar > 10.0f) {
+                if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                    g_valveDischargeCmd = {2000, 2000, 10.0f, 15000};
+                    g_valveDischargeSeq++;
+                    xSemaphoreGive(g_sharedMutex);
+                }
+                publishButtonEvent("BASINC", "BOSALTILIYOR");
+            } else {
+                publishButtonEvent("BASINC", "10 BAR ALTI");
+            }
             break;
+        case ACTION_VALVE_CLEAN: {
+            bool start = !cleanActive;
+            bool busy = false;
+            if (start && g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                busy = fabsf(g_pumpPub.rpm) > 50.0f;
+                for (int i = 0; i < 8 && !busy; i++) {
+                    busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+                }
+                xSemaphoreGive(g_sharedMutex);
+            }
+            if (start && busy) {
+                publishButtonEvent("TEMIZLEME", "ISLEM AKTIF");
+                break;
+            }
+            g_valveClean.ch[0].period_ms = 200;
+            g_valveClean.ch[1].period_ms = 200;
+            g_valveClean.ch[0].active = start;
+            g_valveClean.ch[1].active = start;
+            publishButtonEvent("TEMIZLEME", start ? "BASLADI" : "DURDU");
+            break;
+        }
         default:
             break;
     }
@@ -196,38 +278,48 @@ void TaskButtonPad(void *pvParameters) {
     // Wait for TaskI2CMonitor to initialize I2C
     vTaskDelay(pdMS_TO_TICKS(1500));
 
-    bool tca_ok = false;
-    if (g_i2cMutex && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        // Probe device
-        Wire.beginTransmission(BTN_TCA_ADDR);
-        tca_ok = (Wire.endTransmission() == 0);
-        xSemaphoreGive(g_i2cMutex);
-    }
-
-    if (tca_ok) {
-        // Configure: all port 0 input, port 1 P10/P11 output (LEDs), rest input
-        // Config register: 1=input, 0=output
-        tcaWritePort(TCA_REG_CONFIG0, 0xFF);
-        tcaWritePort(TCA_REG_CONFIG1, 0xFC); // 1111 1100 -> P10/P11 output
-        // Default LED state: green on, red off (active low assumption handled below)
-        tcaWritePort(TCA_REG_OUTPUT1, 0xFF);
-    }
+    bool tca_ok = tcaInit();
+    uint8_t readFailCount = 0;
+    uint32_t lastProbeMs = millis();
 
     // 16-bit debounced button state: 1 = released, 0 = pressed (active low)
     uint16_t raw_prev = 0xFFFF;
     uint16_t debounced = 0xFFFF;
-    uint32_t lastReadMs = 0;
+    bool syncState = true;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(25));
 
-        uint8_t p0 = 0xFF, p1 = 0xFF;
-        if (tca_ok) {
-            tcaReadPort(TCA_REG_INPUT0, p0);
-            tcaReadPort(TCA_REG_INPUT1, p1);
+        if (!tca_ok) {
+            uint32_t now = millis();
+            if (now - lastProbeMs >= 1000) {
+                lastProbeMs = now;
+                tca_ok = tcaInit();
+                syncState = true;
+                readFailCount = 0;
+            }
+            continue;
         }
 
+        uint8_t p0 = 0xFF, p1 = 0xFF;
+        bool readOk = tcaReadPort(TCA_REG_INPUT0, p0) &&
+                      tcaReadPort(TCA_REG_INPUT1, p1);
+        if (!readOk) {
+            if (++readFailCount >= 3) {
+                tca_ok = false;
+                lastProbeMs = millis();
+            }
+            continue;
+        }
+        readFailCount = 0;
+
         uint16_t raw = ((uint16_t)p1 << 8) | p0;
+        if (syncState) {
+            raw_prev = raw;
+            debounced = raw;
+            syncState = false;
+            continue;
+        }
 
         // Simple debounce: only accept state after it stays stable for ~50 ms
         if (raw == raw_prev) {

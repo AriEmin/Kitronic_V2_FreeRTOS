@@ -32,6 +32,10 @@ enum FrameType : uint8_t {
   FT_EVENT   = 0x13, // ESP -> PC single-point event (VD, HS, CC, HCAL, PCV step)
   FT_REQUEST = 0x14, // PC -> ESP request that expects an ack
   FT_ACK     = 0x15, // ESP -> PC ack
+
+  FT_V2_HELLO = 0x20,
+  FT_V2_STATE = 0x21,
+  FT_V2_RESPONSE = 0x22,
 };
 
 // ============================================================
@@ -200,6 +204,27 @@ struct __attribute__((packed)) TelemetryVersion {
   uint8_t  ocpLatch;
 };
 static_assert(sizeof(TelemetryVersion) == 6, "TelemetryVersion size mismatch");
+
+struct __attribute__((packed)) TelemetryStateV2 {
+  uint32_t timestamp_ms;
+  uint32_t session_id;
+  uint8_t  session_active;
+  uint8_t  session_role;
+  uint8_t  operation;
+  uint8_t  flags;
+  int16_t  pressure_bar;
+  int16_t  temperature_C;
+  int16_t  piston_raw[6];
+  int16_t  piston_mm[6];
+  uint8_t  piston_valid_mask;
+  int16_t  valve_current_mA[8];
+  uint16_t valve_duty[8];
+  uint8_t  valve_mode[8];
+  uint8_t  valve_fault[8];
+  int16_t  pump_rpm;
+  uint8_t  pump_mode;
+};
+static_assert(sizeof(TelemetryStateV2) == 92, "TelemetryStateV2 size mismatch");
 
 struct FrameHeader {
   uint8_t  type;

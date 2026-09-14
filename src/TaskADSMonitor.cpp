@@ -198,52 +198,66 @@ static float tmagZToMm(PistonChannel ch, int16_t z) {
     }
 }
 
-// Kavrama pozisyonu TMAG'den hesapla - işaretli lineer interpolasyon
-// K1/K2 için TMAG_CH_K1_1 / TMAG_CH_K2_1 (açık pozisyon sensörü) kullanılır.
-// Daha önce TMAG_CH_K1_2 / K2_2 (kapalı sensör) kullanılıyordu; saha verisinde
-// açık sensör K1/K2 hareketini daha doğru takip ediyor.
-// z1 hareket boyunca işaret değiştirdiğinden (+ → 0 → -) |z1| tabanlı
-// ratiometrik formül orta bölgede donmaya yol açar. Bunun yerine
-// kalibrasyon değerleri (zMin2=kapalı, zMax2=açık) arasında doğrusal norm.
-static float tmagKavramaMm(int idx) {
-    // Açık pozisyon sensörü (ikincil sensör kanalı)
-    uint8_t ch1 = (idx == 0) ? TMAG_CH_K1_1 : TMAG_CH_K2_1;
-    PistonChannel piston = (idx == 0) ? PISTON_K1 : PISTON_K2;
-
-    if (!g_tmagData[ch1].valid) return 0.0f;
-
-    const TMAGPistonCalib& cal = g_tmagPistonCalib[piston];
-
-    // İkinci sensör kalibrasyonu varsa onu kullan; yoksa birincil sensör kalibrasyonuna
-    // geri dön (sistemde yalnızca bir sensör varsa).
-    bool useSensor2 = cal.valid && cal.hasSensor2 &&
-                      (fabsf((float)cal.zMax2 - (float)cal.zMin2) >= 10.0f);
-
-    if (!cal.valid) {
-        // Kalibrasyon yoksa varsayılan aralık kullan (tek sensör)
-        float norm = (float)(g_tmagData[ch1].z + 2000) / 4000.0f;
-        return clampf(norm * 24.0f, 0.0f, 24.0f);
-    }
-
-    float span, zMin;
-    if (useSensor2) {
-        // Açık sensör kalibrasyonu (zMin2=kapalı, zMax2=açık)
-        span  = (float)cal.zMax2 - (float)cal.zMin2;
-        zMin  = (float)cal.zMin2;
-    } else {
-        // Birincil sensör kalibrasyonu (zMin=kapalı, zMax=açık)
-        span  = (float)cal.zMax - (float)cal.zMin;
-        zMin  = (float)cal.zMin;
-    }
-    if (fabsf(span) < 10.0f) return 0.0f;
-    float norm = ((float)g_tmagData[ch1].z - zMin) / span;
-    return clampf(norm, 0.0f, 1.0f) * cal.strokeMm;
-}
-
 // TMAG okumalarını cache'le (mutex dışında kullanmak için)
 static TMAG5173_Reading s_tmagCache[TMAG_CH_COUNT] = {};
 static TMAGPistonCalib s_tmagCalCache[PISTON_CHANNEL_COUNT] = {};
 static TMAGKavramaCalib s_tmagKavCalCache[2] = {};
+
+// Kavrama pozisyonu TMAG'den hesapla - kavrama özel kalibrasyonu kullan
+// K1/K2 için TMAG_CH_K1_1 / TMAG_CH_K2_1 (açık pozisyon sensörü) birincil,
+// TMAG_CH_K1_2 / TMAG_CH_K2_2 (kapalı pozisyon sensörü) ikincil kaynak.
+static float tmagKavramaMm(int idx) {
+    uint8_t ch1 = (idx == 0) ? TMAG_CH_K1_1 : TMAG_CH_K2_1;
+    uint8_t ch2 = (idx == 0) ? TMAG_CH_K1_2 : TMAG_CH_K2_2;
+    PistonChannel piston = (idx == 0) ? PISTON_K1 : PISTON_K2;
+
+    if (!g_tmagData[ch1].valid) return 0.0f;
+
+    // 1) Önce kavrama özel kalibrasyonu dene
+    const TMAGKavramaCalib& kcal = s_tmagKavCalCache[idx];
+    if (kcal.valid) {
+        float span = (float)kcal.sensor1_open - (float)kcal.sensor1_closed;
+        if (fabsf(span) >= 10.0f) {
+            float norm = ((float)g_tmagData[ch1].z - (float)kcal.sensor1_closed) / span;
+            float strokeMm = kcal.strokeMm > 0.1f ? kcal.strokeMm : 15.0f;
+            return clampf(norm, 0.0f, 1.0f) * strokeMm;
+        }
+        // Birincil sensör açık/kapalı aralığı belirsizse ikincili dene
+        float span2 = (float)kcal.sensor2_open - (float)kcal.sensor2_closed;
+        if (g_tmagData[ch2].valid && fabsf(span2) >= 10.0f) {
+            float norm = ((float)g_tmagData[ch2].z - (float)kcal.sensor2_closed) / span2;
+            float strokeMm = kcal.strokeMm > 0.1f ? kcal.strokeMm : 15.0f;
+            return clampf(norm, 0.0f, 1.0f) * strokeMm;
+        }
+    }
+
+    // 2) Eski piston TMAG kalibrasyonu varsa onu kullan
+    const TMAGPistonCalib& cal = g_tmagPistonCalib[piston];
+    bool useSensor2 = cal.valid && cal.hasSensor2 &&
+                      (fabsf((float)cal.zMax2 - (float)cal.zMin2) >= 10.0f);
+
+    if (cal.valid) {
+        float span, zMin;
+        if (useSensor2) {
+            span = (float)cal.zMax2 - (float)cal.zMin2;
+            zMin = (float)cal.zMin2;
+        } else {
+            span = (float)cal.zMax - (float)cal.zMin;
+            zMin = (float)cal.zMin;
+        }
+        if (fabsf(span) >= 10.0f) {
+            float norm = ((float)g_tmagData[ch1].z - zMin) / span;
+            float strokeMm = cal.strokeMm > 5.0f ? cal.strokeMm : 15.0f;
+            return clampf(norm, 0.0f, 1.0f) * strokeMm;
+        }
+    }
+
+    // 3) Kalibrasyon yoksa ham değeri değişim gösterecek şekilde göster
+    // (doğru mm için mutlaka kalibrasyon yapılmalı)
+    float norm = (float)(g_tmagData[ch1].z + 2000) / 4000.0f;
+    return clampf(norm * 24.0f, -200.0f, 200.0f);
+}
+
 static uint32_t s_tmagCalSeqCache = 0;
 
 // Yardimci: tek hall -> 0..stroke mm (kalibrasyon yoksa basit fallback)

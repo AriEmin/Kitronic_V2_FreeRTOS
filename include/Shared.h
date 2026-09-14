@@ -40,6 +40,23 @@ extern uint16_t           g_valveTargetDuty[8];
 extern float              g_valveCustomCurrent_mA[8]; // Per-valf özel akım hedefi (0=devre dışı)
 extern uint8_t            g_valveCustomMode[8];   // 0=off,1=open,2=close,3=open_slow,4=close_slow,5=pcv
 
+typedef struct {
+  uint32_t seq;
+  uint32_t timestampMs;
+  char     button[16];
+  char     state[16];
+} ButtonDisplayEvent;
+extern ButtonDisplayEvent g_buttonDisplayEvent;
+
+struct ControlSessionState {
+  bool     active;
+  uint8_t  role;
+  uint32_t id;
+  uint32_t lastKeepaliveMs;
+};
+extern ControlSessionState g_controlSession;
+extern uint8_t g_uiLanguage;
+
 // -------- ADS/Analog türevleri (TaskADSMonitor kullandıkları) --------
 extern float g_pressure0_V, g_pressure1_V;
 extern float g_temp1_C, g_temp2_C;
