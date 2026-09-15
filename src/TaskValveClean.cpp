@@ -18,24 +18,30 @@ void TaskValveClean(void *pvParameters) {
     
     for (;;) {
         uint32_t now = millis();
-        
+
         for (int i = 0; i < 2; i++) {
+            // Otomatik durma süresi doldu mu?
+            if (g_valveClean.ch[i].active && g_valveClean.ch[i].end_ms != 0 && now >= g_valveClean.ch[i].end_ms) {
+                g_valveClean.ch[i].active = false;
+                g_valveClean.ch[i].end_ms = 0;
+            }
+
             if (g_valveClean.ch[i].active) {
                 uint16_t halfPeriod = g_valveClean.ch[i].period_ms / 2;
-                
+
                 // Periyot değişti mi?
                 if (lastPeriod[i] != g_valveClean.ch[i].period_ms) {
                     lastPeriod[i] = g_valveClean.ch[i].period_ms;
                     lastToggle[i] = now;
                     outputState[i] = true;
                 }
-                
+
                 // %50 duty cycle toggle
                 if (now - lastToggle[i] >= halfPeriod) {
                     lastToggle[i] = now;
                     outputState[i] = !outputState[i];
                 }
-                
+
                 digitalWrite(pins[i], outputState[i] ? HIGH : LOW);
             } else {
                 // Kapalı - çıkışı sıfırla
@@ -44,7 +50,7 @@ void TaskValveClean(void *pvParameters) {
                 lastPeriod[i] = 0;
             }
         }
-        
+
         vTaskDelay(pdMS_TO_TICKS(10));  // 10ms resolution
     }
 }

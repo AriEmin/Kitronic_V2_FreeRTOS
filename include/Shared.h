@@ -663,7 +663,8 @@ enum TMAGChannel : uint8_t {
 // -------- VALF TEMİZLEME --------
 struct ValveCleanChannel {
     volatile bool     active;        // Kanal aktif mi
-    volatile uint16_t period_ms;     // Puls periyodu (100-2000ms)
+    volatile uint16_t period_ms;     // Puls periyodu (50-1000ms)
+    volatile uint32_t end_ms;        // Otomatik durma zamanı (0 = sonsuz)
 };
 struct ValveCleanConfig {
     ValveCleanChannel ch[2];  // 2 bağımsız kanal

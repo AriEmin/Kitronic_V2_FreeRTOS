@@ -249,19 +249,27 @@ static void doAction(ButtonAction action, int valveIdx) {
         case ACTION_VALVE_CLEAN: {
             bool start = !cleanActive;
             bool busy = false;
-            if (start && g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-                busy = fabsf(g_pumpPub.rpm) > 50.0f;
-                for (int i = 0; i < 8 && !busy; i++) {
-                    busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+            if (start) {
+                if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                    busy = fabsf(g_pumpPub.rpm) > 50.0f;
+                    for (int i = 0; i < 8 && !busy; i++) {
+                        busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+                    }
+                    xSemaphoreGive(g_sharedMutex);
+                } else {
+                    busy = true;
                 }
-                xSemaphoreGive(g_sharedMutex);
             }
             if (start && busy) {
                 publishButtonEvent("TEMIZLEME", "ISLEM AKTIF");
                 break;
             }
+            uint32_t now = millis();
+            uint32_t endMs = (start) ? (now + 5U * 60U * 1000U) : 0;
             g_valveClean.ch[0].period_ms = 200;
             g_valveClean.ch[1].period_ms = 200;
+            g_valveClean.ch[0].end_ms = endMs;
+            g_valveClean.ch[1].end_ms = endMs;
             g_valveClean.ch[0].active = start;
             g_valveClean.ch[1].active = start;
             publishButtonEvent("TEMIZLEME", start ? "BASLADI" : "DURDU");

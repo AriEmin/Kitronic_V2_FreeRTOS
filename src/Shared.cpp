@@ -187,7 +187,7 @@ TMAGKavramaCalib g_tmagKavramaCalib[2] = {};
 volatile uint32_t g_tmagCalibSeq = 0;
 
 // Valf temizleme (2 bağımsız kanal)
-ValveCleanConfig g_valveClean = {{{false, 100}, {false, 100}}};
+ValveCleanConfig g_valveClean = {{{false, 100, 0}, {false, 100, 0}}};
 
 // DRV8243 son fault durumları (volatile - multi-task erişim için)
 volatile DRV8243Status g_drvLastFault[4] = {};
