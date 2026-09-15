@@ -1,21 +1,21 @@
 {
-    "version": "1.0.7-test",
-    "release_notes": "Valve cleaning auto-stop, independent channels, busy check",
+    "version": "1.0.8-test",
+    "release_notes": "Remote device.lock V2 op",
     "binaries": [
         {
             "name": "bootloader.bin",
             "offset": "0x0",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.7-test/bootloader.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.8-test/bootloader.bin"
         },
         {
             "name": "partitions.bin",
             "offset": "0x8000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.7-test/partitions.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.8-test/partitions.bin"
         },
         {
             "name": "firmware.bin",
             "offset": "0x10000",
-            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.7-test/firmware.bin"
+            "url": "https://github.com/AriEmin/Kitronic_V2_FreeRTOS/releases/download/fw-v1.0.8-test/firmware.bin"
         }
     ]
 }
