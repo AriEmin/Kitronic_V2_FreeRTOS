@@ -189,6 +189,10 @@ volatile uint32_t g_tmagCalibSeq = 0;
 // Valf temizleme (2 bağımsız kanal)
 ValveCleanConfig g_valveClean = {{{false, 100, 0}, {false, 100, 0}}};
 
+// Uzaktan kilit (portal tarafından)
+volatile bool g_remoteLocked = false;
+char g_remoteLockReason[64] = "";
+
 // DRV8243 son fault durumları (volatile - multi-task erişim için)
 volatile DRV8243Status g_drvLastFault[4] = {};
 volatile bool          g_drvOcpLatch     = false;  // OCP/TSD kilit: true iken tüm valfler kapalı

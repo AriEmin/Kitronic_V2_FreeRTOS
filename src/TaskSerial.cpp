@@ -1654,16 +1654,29 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     if (!strcmp(op, "ui.language")) {
       const char *lang = doc["lang"] | "tr";
       g_uiLanguage = !strcmp(lang, "en") ? 1 : 0;
+    } else if (!strcmp(op, "device.lock")) {
+      bool locked = doc["locked"] | false;
+      const char *reason = doc["reason"] | "";
+      g_remoteLocked = locked;
+      strlcpy(g_remoteLockReason, reason, sizeof(g_remoteLockReason));
+      response["locked"] = g_remoteLocked;
+      response["reason"] = g_remoteLockReason;
     } else if (!strcmp(op, "session.open")) {
-      const char *lang = doc["lang"] | "tr";
-      g_uiLanguage = !strcmp(lang, "en") ? 1 : 0;
-      g_controlSession.active = true;
-      g_controlSession.role = !strcmp(doc["role"] | "user", "service") ? 2 : 1;
-      g_controlSession.id = ((uint32_t)millis() << 8) ^ (uint32_t)esp_random();
-      if (g_controlSession.id == 0) g_controlSession.id = 1;
-      g_controlSession.lastKeepaliveMs = millis();
-      response["session"] = g_controlSession.id;
-      response["timeout_ms"] = 3000;
+      if (g_remoteLocked) {
+        response["ok"] = false;
+        response["error"] = "device_locked";
+        response["reason"] = g_remoteLockReason;
+      } else {
+        const char *lang = doc["lang"] | "tr";
+        g_uiLanguage = !strcmp(lang, "en") ? 1 : 0;
+        g_controlSession.active = true;
+        g_controlSession.role = !strcmp(doc["role"] | "user", "service") ? 2 : 1;
+        g_controlSession.id = ((uint32_t)millis() << 8) ^ (uint32_t)esp_random();
+        if (g_controlSession.id == 0) g_controlSession.id = 1;
+        g_controlSession.lastKeepaliveMs = millis();
+        response["session"] = g_controlSession.id;
+        response["timeout_ms"] = 3000;
+      }
     } else if (!strcmp(op, "session.keepalive")) {
       uint32_t session = doc["session"] | (uint32_t)0;
       if (!g_controlSession.active || session != g_controlSession.id) {
@@ -1691,7 +1704,11 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
       uint32_t session = doc["session"] | (uint32_t)0;
       int valve = doc["valve"] | -1;
       bool on = doc["on"] | false;
-      if (!g_controlSession.active || session != g_controlSession.id) {
+      if (g_remoteLocked) {
+        response["ok"] = false;
+        response["error"] = "device_locked";
+        response["reason"] = g_remoteLockReason;
+      } else if (!g_controlSession.active || session != g_controlSession.id) {
         response["ok"] = false;
         response["error"] = "invalid_session";
       } else if (valve < 0 || valve >= 8) {
@@ -1709,40 +1726,47 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
       uint16_t period = doc["period"] | 100;
       uint16_t duration_s = doc["duration_s"] | 0;
 
-      // Sınırla
-      if (ch < 0) ch = 0;
-      if (ch > 1) ch = 1;
-      if (period < 50) period = 50;
-      if (period > 1000) period = 1000;
-      if (duration_s > 600) duration_s = 600;  // max 10 dk
+      bool rejectLocked = g_remoteLocked && on;
+      if (!rejectLocked) {
+        // Sınırla
+        if (ch < 0) ch = 0;
+        if (ch > 1) ch = 1;
+        if (period < 50) period = 50;
+        if (period > 1000) period = 1000;
+        if (duration_s > 600) duration_s = 600;  // max 10 dk
 
-      bool busy = false;
-      if (on) {
-        if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-          busy = fabsf(g_pumpPub.rpm) > 50.0f;
-          for (int i = 0; i < 8 && !busy; i++) {
-            busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+        bool busy = false;
+        if (on) {
+          if (g_sharedMutex && xSemaphoreTake(g_sharedMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            busy = fabsf(g_pumpPub.rpm) > 50.0f;
+            for (int i = 0; i < 8 && !busy; i++) {
+              busy = g_valveCustomCurrent_mA[i] > 0.0f || g_valveTargetDuty[i] > 0;
+            }
+            xSemaphoreGive(g_sharedMutex);
+          } else {
+            busy = true;  // güvenlik için mutex alınamazsa meşgul kabul et
           }
-          xSemaphoreGive(g_sharedMutex);
-        } else {
-          busy = true;  // güvenlik için mutex alınamazsa meşgul kabul et
         }
-      }
-      if (!on || !busy) {
-        g_valveClean.ch[ch].active = on;
-        g_valveClean.ch[ch].period_ms = period;
-        g_valveClean.ch[ch].end_ms = (on && duration_s > 0) ? (millis() + (uint32_t)duration_s * 1000) : 0;
-      }
+        if (!on || !busy) {
+          g_valveClean.ch[ch].active = on;
+          g_valveClean.ch[ch].period_ms = period;
+          g_valveClean.ch[ch].end_ms = (on && duration_s > 0) ? (millis() + (uint32_t)duration_s * 1000) : 0;
+        }
 
-      char msg[64];
-      if (on && busy) {
-        snprintf(msg, sizeof(msg), "[VCLEAN] REJECTED: SYSTEM BUSY");
-        response["ok"] = false;
-        response["error"] = "system_busy";
+        char msg[64];
+        if (on && busy) {
+          snprintf(msg, sizeof(msg), "[VCLEAN] REJECTED: SYSTEM BUSY");
+          response["ok"] = false;
+          response["error"] = "system_busy";
+        } else {
+          snprintf(msg, sizeof(msg), "[VCLEAN] ch%d %s period=%dms duration=%us", ch, on ? "ON" : "OFF", period, (unsigned)duration_s);
+        }
+        kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
       } else {
-        snprintf(msg, sizeof(msg), "[VCLEAN] ch%d %s period=%dms duration=%us", ch, on ? "ON" : "OFF", period, (unsigned)duration_s);
+        response["ok"] = false;
+        response["error"] = "device_locked";
+        response["reason"] = g_remoteLockReason;
       }
-      kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
       response["op"] = "valve_clean";
       response["ch"] = ch;
       response["on"] = g_valveClean.ch[ch].active;

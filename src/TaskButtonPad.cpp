@@ -190,6 +190,10 @@ static void loadOilFillDefaults(uint32_t &rpm, uint32_t &durationMs) {
 static void doAction(ButtonAction action, int valveIdx) {
     static const char *VALVE_NAMES[8] = {"N433", "N436", "N434", "N435", "N438", "N440", "N439", "N437"};
     static bool oilFillActive = false;
+    if (g_remoteLocked) {
+        publishButtonEvent("SISTEM", "KILITLI");
+        return;
+    }
     if (!g_controlSession.active) {
         publishButtonEvent("SISTEM", "GIRIS GEREKLI");
         return;

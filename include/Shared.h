@@ -671,6 +671,10 @@ struct ValveCleanConfig {
 };
 extern ValveCleanConfig g_valveClean;
 
+// Uzaktan kilit (portal tarafından)
+extern volatile bool g_remoteLocked;
+extern char g_remoteLockReason[64];
+
 // -------- DRV8243 DURUM --------
 struct DRV8243Status {
     volatile uint8_t st1;    // FAULT_SUMMARY (0x01)
