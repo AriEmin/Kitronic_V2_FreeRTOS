@@ -1,21 +1,21 @@
 {
-  "version": "1.4.2",
-  "release_notes": "4-fazli ariza tespiti: elektriksel valf, pompa doldurma, hizli hava alma, piston kalibrasyonu.",
+  "version": "1.4.3",
+  "release_notes": "4-fazli ariza tespiti: valf akim gosterimi, PUMP_AUTO ile piston hareketi ve basinc tutma duzeltmeleri.",
   "binaries": [
     {
       "name": "bootloader.bin",
       "offset": "0x0000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.2/bootloader.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.3/bootloader.bin"
     },
     {
       "name": "partitions.bin",
       "offset": "0x8000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.2/partitions.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.3/partitions.bin"
     },
     {
       "name": "firmware.bin",
       "offset": "0x10000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.2/firmware.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.3/firmware.bin"
     }
   ]
 }
