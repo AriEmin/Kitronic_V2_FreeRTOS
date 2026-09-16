@@ -1,21 +1,21 @@
 {
-  "version": "1.4.5",
-  "release_notes": "NVS parametre kaydetme hata ayiklama ve guvenlik loglari.",
+  "version": "1.4.6",
+  "release_notes": "Auto-test parametre cevaplari FT_EVENT olarak gonderiliyor; kaydetme dogrulamasi duzeltildi.",
   "binaries": [
     {
       "name": "bootloader.bin",
       "offset": "0x0000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.5/bootloader.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.6/bootloader.bin"
     },
     {
       "name": "partitions.bin",
       "offset": "0x8000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.5/partitions.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.6/partitions.bin"
     },
     {
       "name": "firmware.bin",
       "offset": "0x10000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.5/firmware.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.6/firmware.bin"
     }
   ]
 }

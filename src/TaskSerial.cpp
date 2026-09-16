@@ -3416,9 +3416,7 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     resp["pcOpen"]    = p.pistonCalibOpenMs;
     resp["pcClose"]   = p.pistonCalibCloseMs;
     resp["pcSettle"]  = p.pistonCalibSettleMs;
-    static char atpBuf[1024];
-    size_t n = serializeJson(resp, atpBuf, sizeof(atpBuf) - 1);
-    if (n > 0) { atpBuf[n] = '\0'; kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, atpBuf); }
+    kitronic::SerialTx_SendEvent(resp, true);
   }
 
   if (doc["at_params_set"].is<JsonObject>()) {
@@ -3470,13 +3468,11 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     if (J["pcSettle"].is<int>())   p.pistonCalibSettleMs    = (uint16_t)J["pcSettle"].as<int>();
     AutoTestParams_SaveNVS();
     {
-      JsonDocument pdoc;
-      auto parr = pdoc["p"].to<JsonArray>();
-      parr.add(p.valveOpenCurrent_mA[0]);
-      parr.add(p.valveOpenCurrent_mA[1]);
-      parr.add(p.valveOpenCurrent_mA[2]);
-      parr.add(p.valveOpenCurrent_mA[3]);
-      sendMsgPackLog(kitronic::MsgCode::AT_PARAMS_SAVED, parr);
+      JsonDocument ev;
+      ev["_t"] = "ATP_SAVED";
+      ev["vOpen0"] = p.valveOpenCurrent_mA[0];
+      ev["vClose0"] = p.valveCloseCurrent_mA[0];
+      kitronic::SerialTx_SendEvent(ev, true);
     }
   }
 
