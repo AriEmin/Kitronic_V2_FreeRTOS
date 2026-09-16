@@ -221,30 +221,32 @@ bool g_tmagOk[TMAG_CH_COUNT] = {false};       // Sensör başlatma durumları
 // Üretici Modu (Manufacturer Mode) - Safety check bypass
 volatile bool        g_manufacturerMode = false;
 
-// -------- 9-FAZLI OTOMATİK TEST --------
-AutoTestParams g_autoTestParams = {
-    .coilMinCurrentMa       = 150.0f,
-    .targetBar              = 60.0f,
-    .pumpFillMaxSec         = 20.0f,
-    .pumpFillTimeoutMs      = 30000,
-    .pressRiseMaxBarPerSec  = 20.0f,
-    .movementThreshold    = 2000,
-    .leakCheckWaitMs      = 2500,
-    .oilLeakMaxDrop_bar   = 30.0f,
-    .oilLeakHoldSec       = 20,
-    .calPwm               = 1500,
-    .calTimeoutMs         = 8000,
-    .holdMidTolPct        = 20.0f,
-    .holdStableMs         = 2000,
-    .autoShiftRepeats     = 3,
-    .gearHoldMs           = 1500,
-    .pumpFillTimeoutFaz9Ms = 15000,
-    .leakRecheckHoldSec   = 20,
-    .leakRecheckMaxDrop_bar = 5.0f,
-    .adaptiveHoldEnabled  = true,
-    .adaptivePwmMaxOffset = 200,
-    .adaptThreshMm        = 2.0f,
-};
+// -------- 4-FAZLI ARIZA TESPITI --------
+static void atpDefaults(AutoTestParams& p) {
+    p.valveCoilMinCurrent_mA = 150.0f;
+    for (int i = 0; i < 8; i++) {
+        p.valveOpenCurrent_mA[i]  = 1000.0f;
+        p.valveCloseCurrent_mA[i] = 200.0f;
+    }
+    p.pumpMaxCurrent_A       = 10.0f;
+    p.pumpFillMaxTime_s      = 20.0f;
+    p.pumpFillTimeout_s      = 30.0f;
+    p.pumpTargetPressure_bar = 50.0f;
+    p.pumpMinPressure_bar    = 42.0f;
+    p.pumpMaxPressure_bar    = 60.0f;
+    p.airBleedCycles         = 10;
+    p.airBleedOpenMs         = 500;
+    p.airBleedCloseMs        = 500;
+    for (int i = 0; i < 6; i++) {
+        p.pistonOpenCurrent_mA[i]  = 1000.0f;
+        p.pistonCloseCurrent_mA[i] = 300.0f;
+    }
+    p.pistonCalibOpenMs      = 1000;
+    p.pistonCalibCloseMs     = 1000;
+    p.pistonCalibSettleMs    = 500;
+}
+
+AutoTestParams g_autoTestParams;
 AutoTestResult    g_autoTestResult{};
 volatile uint32_t g_autoTestReqSeq  = 0;
 volatile bool     g_autoTestStop    = false;
@@ -253,54 +255,61 @@ volatile bool     g_leakRecheckNeeded = false;
 static Preferences s_atpPref;
 
 void AutoTestParams_LoadNVS() {
+    atpDefaults(g_autoTestParams);
     if (!s_atpPref.begin("atp", true)) return;
-    g_autoTestParams.coilMinCurrentMa      = s_atpPref.getFloat( "coilMa",150.0f);
-    g_autoTestParams.targetBar             = s_atpPref.getFloat( "tBar",  60.0f);
-    g_autoTestParams.pumpFillMaxSec        = s_atpPref.getFloat( "pfMax", 20.0f);
-    g_autoTestParams.pumpFillTimeoutMs     = s_atpPref.getUInt(  "pfTmo", 30000);
-    g_autoTestParams.pressRiseMaxBarPerSec = s_atpPref.getFloat( "prMax", 30.0f);
-    g_autoTestParams.movementThreshold    = s_atpPref.getUShort("mvThr", 2000);
-    g_autoTestParams.leakCheckWaitMs      = s_atpPref.getUInt(  "lkWt",  2500);
-    g_autoTestParams.oilLeakMaxDrop_bar   = s_atpPref.getFloat( "olDrp", 30.0f);
-    g_autoTestParams.oilLeakHoldSec       = s_atpPref.getUInt(  "olHld", 20);
-    g_autoTestParams.calPwm               = s_atpPref.getUShort("cPwm",  1500);
-    g_autoTestParams.calTimeoutMs         = s_atpPref.getUInt(  "cTmo",  8000);
-    g_autoTestParams.holdMidTolPct        = s_atpPref.getFloat( "hTol",  20.0f);
-    g_autoTestParams.holdStableMs         = s_atpPref.getUInt(  "hStbl", 2000);
-    g_autoTestParams.autoShiftRepeats     = s_atpPref.getUShort("asRep", 3);
-    g_autoTestParams.gearHoldMs           = s_atpPref.getUInt(  "gHld",  1500);
-    g_autoTestParams.pumpFillTimeoutFaz9Ms = s_atpPref.getUInt( "pf9Tmo", 15000);
-    g_autoTestParams.leakRecheckHoldSec   = s_atpPref.getUInt(  "lrHld", 20);
-    g_autoTestParams.leakRecheckMaxDrop_bar = s_atpPref.getFloat("lrDrp", 5.0f);
-    g_autoTestParams.adaptiveHoldEnabled  = s_atpPref.getBool(  "adEn",  true);
-    g_autoTestParams.adaptivePwmMaxOffset = s_atpPref.getUShort("adMx",  200);
-    g_autoTestParams.adaptThreshMm        = s_atpPref.getFloat( "adThr", 2.0f);
+    g_autoTestParams.valveCoilMinCurrent_mA = s_atpPref.getFloat("coilMa", 150.0f);
+    size_t len;
+    len = s_atpPref.getBytes("vOpen", g_autoTestParams.valveOpenCurrent_mA, sizeof(g_autoTestParams.valveOpenCurrent_mA));
+    if (len != sizeof(g_autoTestParams.valveOpenCurrent_mA)) {
+        for (int i = 0; i < 8; i++) g_autoTestParams.valveOpenCurrent_mA[i] = 1000.0f;
+    }
+    len = s_atpPref.getBytes("vClose", g_autoTestParams.valveCloseCurrent_mA, sizeof(g_autoTestParams.valveCloseCurrent_mA));
+    if (len != sizeof(g_autoTestParams.valveCloseCurrent_mA)) {
+        for (int i = 0; i < 8; i++) g_autoTestParams.valveCloseCurrent_mA[i] = 200.0f;
+    }
+    g_autoTestParams.pumpMaxCurrent_A       = s_atpPref.getFloat("pumpMaxA", 10.0f);
+    g_autoTestParams.pumpFillMaxTime_s      = s_atpPref.getFloat("pFillMax", 20.0f);
+    g_autoTestParams.pumpFillTimeout_s      = s_atpPref.getFloat("pFillTmo", 30.0f);
+    g_autoTestParams.pumpTargetPressure_bar = s_atpPref.getFloat("pTarget", 50.0f);
+    g_autoTestParams.pumpMinPressure_bar    = s_atpPref.getFloat("pMin", 42.0f);
+    g_autoTestParams.pumpMaxPressure_bar    = s_atpPref.getFloat("pMax", 60.0f);
+    g_autoTestParams.airBleedCycles         = (uint8_t)s_atpPref.getUChar("abCyc", 10);
+    g_autoTestParams.airBleedOpenMs         = s_atpPref.getUShort("abOpen", 500);
+    g_autoTestParams.airBleedCloseMs        = s_atpPref.getUShort("abClose", 500);
+    len = s_atpPref.getBytes("pOpen", g_autoTestParams.pistonOpenCurrent_mA, sizeof(g_autoTestParams.pistonOpenCurrent_mA));
+    if (len != sizeof(g_autoTestParams.pistonOpenCurrent_mA)) {
+        for (int i = 0; i < 6; i++) g_autoTestParams.pistonOpenCurrent_mA[i] = 1000.0f;
+    }
+    len = s_atpPref.getBytes("pClose", g_autoTestParams.pistonCloseCurrent_mA, sizeof(g_autoTestParams.pistonCloseCurrent_mA));
+    if (len != sizeof(g_autoTestParams.pistonCloseCurrent_mA)) {
+        for (int i = 0; i < 6; i++) g_autoTestParams.pistonCloseCurrent_mA[i] = 300.0f;
+    }
+    g_autoTestParams.pistonCalibOpenMs      = s_atpPref.getUShort("pcOpen", 1000);
+    g_autoTestParams.pistonCalibCloseMs     = s_atpPref.getUShort("pcClose", 1000);
+    g_autoTestParams.pistonCalibSettleMs    = s_atpPref.getUShort("pcSettle", 500);
     s_atpPref.end();
 }
 
 void AutoTestParams_SaveNVS() {
     if (!s_atpPref.begin("atp", false)) return;
-    s_atpPref.putFloat( "coilMa",g_autoTestParams.coilMinCurrentMa);
-    s_atpPref.putFloat( "tBar",  g_autoTestParams.targetBar);
-    s_atpPref.putFloat( "pfMax", g_autoTestParams.pumpFillMaxSec);
-    s_atpPref.putUInt(  "pfTmo", g_autoTestParams.pumpFillTimeoutMs);
-    s_atpPref.putFloat( "prMax", g_autoTestParams.pressRiseMaxBarPerSec);
-    s_atpPref.putUShort("mvThr", g_autoTestParams.movementThreshold);
-    s_atpPref.putUInt(  "lkWt",  g_autoTestParams.leakCheckWaitMs);
-    s_atpPref.putFloat( "olDrp", g_autoTestParams.oilLeakMaxDrop_bar);
-    s_atpPref.putUInt(  "olHld", g_autoTestParams.oilLeakHoldSec);
-    s_atpPref.putUShort("cPwm",  g_autoTestParams.calPwm);
-    s_atpPref.putUInt(  "cTmo",  g_autoTestParams.calTimeoutMs);
-    s_atpPref.putFloat( "hTol",  g_autoTestParams.holdMidTolPct);
-    s_atpPref.putUInt(  "hStbl", g_autoTestParams.holdStableMs);
-    s_atpPref.putUShort("asRep", g_autoTestParams.autoShiftRepeats);
-    s_atpPref.putUInt(  "gHld",  g_autoTestParams.gearHoldMs);
-    s_atpPref.putUInt(  "pf9Tmo",g_autoTestParams.pumpFillTimeoutFaz9Ms);
-    s_atpPref.putUInt(  "lrHld", g_autoTestParams.leakRecheckHoldSec);
-    s_atpPref.putFloat( "lrDrp", g_autoTestParams.leakRecheckMaxDrop_bar);
-    s_atpPref.putBool(  "adEn",  g_autoTestParams.adaptiveHoldEnabled);
-    s_atpPref.putUShort("adMx",  g_autoTestParams.adaptivePwmMaxOffset);
-    s_atpPref.putFloat( "adThr", g_autoTestParams.adaptThreshMm);
+    const auto& p = g_autoTestParams;
+    s_atpPref.putFloat("coilMa",  p.valveCoilMinCurrent_mA);
+    s_atpPref.putBytes("vOpen",   p.valveOpenCurrent_mA,  sizeof(p.valveOpenCurrent_mA));
+    s_atpPref.putBytes("vClose",  p.valveCloseCurrent_mA, sizeof(p.valveCloseCurrent_mA));
+    s_atpPref.putFloat("pumpMaxA",p.pumpMaxCurrent_A);
+    s_atpPref.putFloat("pFillMax",p.pumpFillMaxTime_s);
+    s_atpPref.putFloat("pFillTmo",p.pumpFillTimeout_s);
+    s_atpPref.putFloat("pTarget", p.pumpTargetPressure_bar);
+    s_atpPref.putFloat("pMin",    p.pumpMinPressure_bar);
+    s_atpPref.putFloat("pMax",    p.pumpMaxPressure_bar);
+    s_atpPref.putUChar("abCyc",   p.airBleedCycles);
+    s_atpPref.putUShort("abOpen", p.airBleedOpenMs);
+    s_atpPref.putUShort("abClose",p.airBleedCloseMs);
+    s_atpPref.putBytes("pOpen",   p.pistonOpenCurrent_mA,  sizeof(p.pistonOpenCurrent_mA));
+    s_atpPref.putBytes("pClose",  p.pistonCloseCurrent_mA, sizeof(p.pistonCloseCurrent_mA));
+    s_atpPref.putUShort("pcOpen",  p.pistonCalibOpenMs);
+    s_atpPref.putUShort("pcClose", p.pistonCalibCloseMs);
+    s_atpPref.putUShort("pcSettle",p.pistonCalibSettleMs);
     s_atpPref.end();
 }
 

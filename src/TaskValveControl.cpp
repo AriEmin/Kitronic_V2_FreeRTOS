@@ -989,7 +989,7 @@ static void applyPistonHoldControl(uint16_t target[8], bool suppressed) {
                 s_pidLastError[p] = s_filteredError[p];
                 
                 // PID çıkışı (adaptasyon disabled ise Ki=0 olur)
-                float Ki = g_autoTestParams.adaptiveHoldEnabled ? HOLD_PID_KI : 0.0f;
+                float Ki = HOLD_PID_KI;
                 float Kp = (s_filteredError[p] < 0.0f) ? HOLD_PID_KP_OPEN : HOLD_PID_KP_CLOSE;
                 
                 float pidP = Kp * s_filteredError[p];
@@ -1026,7 +1026,7 @@ static void applyPistonHoldControl(uint16_t target[8], bool suppressed) {
                 s_lastPwmOut[p] = pwmOut;
                 
                 // Integral birikimi (adaptasyon etkinse)
-                if (g_autoTestParams.adaptiveHoldEnabled && filteredAbsError > deadZone * 0.5f) {
+                if (filteredAbsError > deadZone * 0.5f) {
                     // Hata işareti değişmeden integral biriktir (stable drift düzeltmesi)
                     s_pidIntegral[p] += s_filteredError[p] * (HOLD_PID_PERIOD_MS / 1000.0f);
                     

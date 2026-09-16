@@ -10,8 +10,8 @@ class TMAG5173;
 // -------- Firmware Versiyon --------
 #define FW_VERSION_MAJOR 1
 #define FW_VERSION_MINOR 4
-#define FW_VERSION_PATCH 1
-#define FW_VERSION_STR "1.4.1"
+#define FW_VERSION_PATCH 2
+#define FW_VERSION_STR "1.4.2"
 
 // -------- RTOS Objeleri --------
 extern SemaphoreHandle_t  g_sharedMutex;
@@ -778,44 +778,31 @@ extern volatile bool g_manufacturerMode;
 
 struct AutoTestParams {
     // Faz 0: Elektriksel valf kontrolü
-    float    coilMinCurrentMa;       // Min kabul edilen bobin akımı (mA) varsayılan: 150
-                                     // GUI'deki "Faz 0 - Elektriksel Valf Kontrolü" eşiğiyle aynı
-                                     // kaynaktan (config.json) beslenir; tek eşik burada kullanılır.
+    float    valveCoilMinCurrent_mA;   // Min kabul edilen bobin akımı (mA) varsayılan: 150
 
-    // Faz 1: Pompa doldurma
-    float    targetBar;              // Hedef basınç (bar)          varsayılan: 60
-    float    pumpFillMaxSec;         // Rapor eşiği - üstünde arıza (sn) varsayılan: 20
-    uint32_t pumpFillTimeoutMs;      // Max doldurma süresi (ms)    varsayılan: 30000
-    float    pressRiseMaxBarPerSec;  // Max anlık basınç artış hızı (bar/sn) varsayılan: 20.0
-                                     // Bu üstü = basınç tüpü (akümülatör) arızası
+    // 8 valf için açma/kapama (hold) akım hedefleri (mA)
+    float    valveOpenCurrent_mA[8];
+    float    valveCloseCurrent_mA[8];
 
-    // Faz 2-5: Kaçak testleri
-    uint16_t movementThreshold;      // Hareket eşiği (hall birimi) varsayılan: 2000
-    uint32_t leakCheckWaitMs;        // Valf açtıktan sonra bekleme varsayılan: 2500
+    // Faz 1: Pompa doldurma testi
+    float    pumpMaxCurrent_A;         // Rapor eşiği: üstünde arıza (A) varsayılan: 10
+    float    pumpFillMaxTime_s;        // Rapor eşiği: üstünde arıza (sn) varsayılan: 20
+    float    pumpFillTimeout_s;        // Güvenlik timeout (sn) varsayılan: 30
+    float    pumpTargetPressure_bar;   // Hedef basınç (bar) varsayılan: 50
+    float    pumpMinPressure_bar;      // Hava alma/kalibrasyon basınç alt sınırı (bar) varsayılan: 42
+    float    pumpMaxPressure_bar;      // Hava alma/kalibrasyon basınç üst sınırı (bar) varsayılan: 60
 
-    // Faz 6: Yağ kaçak testi
-    float    oilLeakMaxDrop_bar;     // Max izin verilen düşüş (bar) varsayılan: 30
-    uint32_t oilLeakHoldSec;         // Basınç tutma süresi (sn)    varsayılan: 20
+    // Faz 2: Hızlı hava alma
+    uint8_t  airBleedCycles;           // Her piston için aç/kapa tekrarı varsayılan: 10
+    uint16_t airBleedOpenMs;           // Açık tutma süresi (ms) varsayılan: 500
+    uint16_t airBleedCloseMs;          // Kapalı tutma süresi (ms) varsayılan: 500
 
-    // Faz 7-8: Kalibrasyon
-    uint16_t calPwm;                 // Kalibrasyon PWM             varsayılan: 1500
-    uint32_t calTimeoutMs;           // Tek piston timeout (ms)     varsayılan: 8000
-    float    holdMidTolPct;          // Hold toleransı %            varsayılan: 20.0
-    uint32_t holdStableMs;           // Stabil kalma süresi (ms)    varsayılan: 2000
-
-    // Faz 9: Otomatik vites testi
-    uint16_t autoShiftRepeats;       // Vites döngüsü tekrar sayısı varsayılan: 3
-    uint32_t gearHoldMs;             // Her viteste bekleme (ms)    varsayılan: 1500
-    uint32_t pumpFillTimeoutFaz9Ms;  // Faz 9 içi pompa timeout (ms) varsayılan: 15000
-
-    // Faz 10: Şartlı Kaçak Yeniden Testi (Faz 9'da pompa kaçak tetiklenirse)
-    uint32_t leakRecheckHoldSec;     // Basınç tutma süresi (sn)    varsayılan: 20
-    float    leakRecheckMaxDrop_bar; // Max izin verilen düşüş (bar) varsayılan: 5.0
-
-    // Adaptif hold PWM
-    bool     adaptiveHoldEnabled;    // Adaptif hold aktif mi       varsayılan: true
-    uint16_t adaptivePwmMaxOffset;   // Max PWM adaptasyon ofseti   varsayılan: 200
-    float    adaptThreshMm;          // Adaptasyon sapma eşiği (mm) varsayılan: 2.0
+    // Faz 3: Piston kalibrasyonu (6 piston)
+    float    pistonOpenCurrent_mA[6];  // Açma akım hedefi (mA)
+    float    pistonCloseCurrent_mA[6]; // Kapama (hold) akım hedefi (mA)
+    uint16_t pistonCalibOpenMs;        // Açma pulse süresi (ms) varsayılan: 1000
+    uint16_t pistonCalibCloseMs;       // Kapama pulse süresi (ms) varsayılan: 1000
+    uint16_t pistonCalibSettleMs;      // Hareket sonrası bekleme (ms) varsayılan: 500
 };
 
 struct AutoTestPhaseResult {
@@ -823,31 +810,34 @@ struct AutoTestPhaseResult {
     bool    pass;
     char    detail[80];   // "OK" veya hata açıklaması
     float   measured;     // Faza göre: sn / bar / mm
-    uint8_t faultMask;    // bit=i → piston/valf i arızalı (faz 2-5,7,8)
+    uint8_t faultMask;    // bit=i → piston/valf i arızalı
+};
+
+struct AutoTestPistonCalibResult {
+    char     name[8];      // "P1-3" vb.
+    int16_t  closedRaw;    // Kapalı hall değeri
+    int16_t  openRaw;      // Açık hall değeri
+    float    strokeMm;     // Strok mesafesi (mm)
+    bool     valid;
 };
 
 struct AutoTestResult {
     bool     running;
     bool     done;
     bool     pass;
-    uint8_t  currentPhase;        // 0-8 (şu an çalışan faz indeksi)
+    uint8_t  currentPhase;        // 0-3 (şu an çalışan faz indeksi)
     uint32_t startMs;
     uint32_t endMs;
-    AutoTestPhaseResult phases[11]; // [0]=Faz0(Elektriksel) [1]=Faz1 ... [9]=Faz9 [10]=Faz10(Şartlı Kaçak)
+    AutoTestPhaseResult phases[4]; // 4 faz
+    AutoTestPistonCalibResult pistonCalib[6];
 };
 
 enum AutoTestPhase : uint8_t {
     ATP_IDLE = 0,
-    ATP_P1_PUMP_FILL,      // Faz 1: Pompa doldurma
-    ATP_P2_LEAK_A1_V,      // Faz 2: Alan-1 vites valfleri kaçak
-    ATP_P3_LEAK_A1_PCV,    // Faz 3: Alan-1 PCV (N436) kaçak
-    ATP_P4_LEAK_A2_V,      // Faz 4: Alan-2 vites valfleri kaçak
-    ATP_P5_LEAK_A2_PCV,    // Faz 5: Alan-2 PCV (N440) kaçak
-    ATP_P6_OIL_LEAK,       // Faz 6: Mekatronik yağ kaçak
-    ATP_P7_CALIB_OC,       // Faz 7: Açık/kapalı kalibrasyon
-    ATP_P8_CALIB_HOLD,     // Faz 8: Hold kalibrasyon
-    ATP_P9_AUTO_SHIFT,     // Faz 9: Otomatik vites testi
-    ATP_P10_LEAK_RECHECK,  // Faz 10: Şartlı yağ kaçak yeniden testi (pompa timeout tetikler)
+    ATP_P1_VALVE_ELEC,   // Faz 0: Elektriksel Valf Kontrolü
+    ATP_P2_PUMP_FILL,    // Faz 1: Pompa Doldurma Testi
+    ATP_P3_AIR_BLEED,    // Faz 2: Hızlı Hava Alma
+    ATP_P4_PISTON_CALIB, // Faz 3: Piston Kalibrasyonu
     ATP_DONE,
     ATP_ABORTED
 };

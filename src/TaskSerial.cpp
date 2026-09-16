@@ -3377,32 +3377,18 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     }
   }
 
-  //--------------9-FAZLI OTOMATİK TEST---------------
+  //--------------4-FAZLI ARIZA TESPITI---------------
   // {"at_start":true}          → Testi başlat
   // {"at_stop":true}           → Testi durdur
   // {"at_params_get":true}     → Parametreleri oku ve gönder
   // {"at_params_set":{...}}    → Parametreleri yaz + NVS'e kaydet
 
   if (doc["at_start"].is<bool>() && doc["at_start"].as<bool>()) {
-    // Opsiyonel parametreler: gearHoldMs, repeatCount
-    if (doc["gearHoldMs"].is<uint32_t>()) {
-      uint32_t ms = doc["gearHoldMs"].as<uint32_t>();
-      if (ms >= 500 && ms <= 10000) g_autoTestParams.gearHoldMs = ms;
-    }
-    if (doc["repeatCount"].is<uint8_t>() || doc["repeatCount"].is<int>()) {
-      int rep = doc["repeatCount"].as<int>();
-      if (rep >= 1 && rep <= 250) g_autoTestParams.autoShiftRepeats = (uint16_t)rep;
-    }
     portENTER_CRITICAL(&g_portMux);
     g_autoTestStop = false;
     g_autoTestReqSeq++;
     portEXIT_CRITICAL(&g_portMux);
-    {
-      char msg[64];
-      snprintf(msg, sizeof(msg), "[AT] 9-faz test baslatildi: %u tekrar, %ums",
-               (unsigned)g_autoTestParams.autoShiftRepeats, (unsigned)g_autoTestParams.gearHoldMs);
-      kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, msg);
-    }
+    kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, (char*)"[AT] 4-faz ariza tespiti baslatildi");
   }
 
   if (doc["at_stop"].is<bool>() && doc["at_stop"].as<bool>()) {
@@ -3413,27 +3399,29 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
   }
 
   if (doc["at_params_get"].is<bool>() && doc["at_params_get"].as<bool>()) {
-    StaticJsonDocument<512> resp;
+    StaticJsonDocument<1024> resp;
     resp["_t"] = "ATP";
     const auto& p = g_autoTestParams;
-    resp["coilMa"] = p.coilMinCurrentMa;
-    resp["tBar"]   = p.targetBar;
-    resp["pfMax"]  = p.pumpFillMaxSec;
-    resp["pfTmo"]  = p.pumpFillTimeoutMs;
-    resp["mvThr"]  = p.movementThreshold;
-    resp["lkWt"]   = p.leakCheckWaitMs;
-    resp["olDrp"]  = p.oilLeakMaxDrop_bar;
-    resp["olHld"]  = p.oilLeakHoldSec;
-    resp["cPwm"]   = p.calPwm;
-    resp["cTmo"]   = p.calTimeoutMs;
-    resp["hTol"]   = p.holdMidTolPct;
-    resp["hStbl"]  = p.holdStableMs;
-    resp["asRep"]  = p.autoShiftRepeats;
-    resp["gHld"]   = p.gearHoldMs;
-    resp["adEn"]   = p.adaptiveHoldEnabled;
-    resp["adMx"]   = p.adaptivePwmMaxOffset;
-    resp["adThr"]  = p.adaptThreshMm;
-    static char atpBuf[512];
+    resp["coilMa"]   = p.valveCoilMinCurrent_mA;
+    auto vOpen = resp["vOpen"].to<JsonArray>();
+    auto vClose = resp["vClose"].to<JsonArray>();
+    for (int i = 0; i < 8; i++) { vOpen.add(p.valveOpenCurrent_mA[i]); vClose.add(p.valveCloseCurrent_mA[i]); }
+    resp["pumpMaxA"]  = p.pumpMaxCurrent_A;
+    resp["pFillMax"]  = p.pumpFillMaxTime_s;
+    resp["pFillTmo"]  = p.pumpFillTimeout_s;
+    resp["pTarget"]   = p.pumpTargetPressure_bar;
+    resp["pMin"]      = p.pumpMinPressure_bar;
+    resp["pMax"]      = p.pumpMaxPressure_bar;
+    resp["abCyc"]     = p.airBleedCycles;
+    resp["abOpen"]    = p.airBleedOpenMs;
+    resp["abClose"]   = p.airBleedCloseMs;
+    auto pOpen = resp["pOpen"].to<JsonArray>();
+    auto pClose = resp["pClose"].to<JsonArray>();
+    for (int i = 0; i < 6; i++) { pOpen.add(p.pistonOpenCurrent_mA[i]); pClose.add(p.pistonCloseCurrent_mA[i]); }
+    resp["pcOpen"]    = p.pistonCalibOpenMs;
+    resp["pcClose"]   = p.pistonCalibCloseMs;
+    resp["pcSettle"]  = p.pistonCalibSettleMs;
+    static char atpBuf[1024];
     size_t n = serializeJson(resp, atpBuf, sizeof(atpBuf) - 1);
     if (n > 0) { atpBuf[n] = '\0'; kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, atpBuf); }
   }
@@ -3441,23 +3429,35 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
   if (doc["at_params_set"].is<JsonObject>()) {
     auto J = doc["at_params_set"].as<JsonObject>();
     auto& p = g_autoTestParams;
-    if (J["coilMa"].is<float>()) p.coilMinCurrentMa     = J["coilMa"].as<float>();
-    if (J["tBar"].is<float>())   p.targetBar            = J["tBar"].as<float>();
-    if (J["pfMax"].is<float>())  p.pumpFillMaxSec       = J["pfMax"].as<float>();
-    if (J["pfTmo"].is<uint32_t>()) p.pumpFillTimeoutMs  = J["pfTmo"].as<uint32_t>();
-    if (J["mvThr"].is<int>())    p.movementThreshold    = (uint16_t)J["mvThr"].as<int>();
-    if (J["lkWt"].is<uint32_t>()) p.leakCheckWaitMs     = J["lkWt"].as<uint32_t>();
-    if (J["olDrp"].is<float>())  p.oilLeakMaxDrop_bar   = J["olDrp"].as<float>();
-    if (J["olHld"].is<uint32_t>()) p.oilLeakHoldSec     = J["olHld"].as<uint32_t>();
-    if (J["cPwm"].is<int>())     p.calPwm               = (uint16_t)J["cPwm"].as<int>();
-    if (J["cTmo"].is<uint32_t>()) p.calTimeoutMs        = J["cTmo"].as<uint32_t>();
-    if (J["hTol"].is<float>())   p.holdMidTolPct        = J["hTol"].as<float>();
-    if (J["hStbl"].is<uint32_t>()) p.holdStableMs       = J["hStbl"].as<uint32_t>();
-    if (J["asRep"].is<int>())    p.autoShiftRepeats      = (uint16_t)J["asRep"].as<int>();
-    if (J["gHld"].is<uint32_t>()) p.gearHoldMs          = J["gHld"].as<uint32_t>();
-    if (J["adEn"].is<bool>())    p.adaptiveHoldEnabled   = J["adEn"].as<bool>();
-    if (J["adMx"].is<int>())     p.adaptivePwmMaxOffset  = (uint16_t)J["adMx"].as<int>();
-    if (J["adThr"].is<float>())  p.adaptThreshMm         = J["adThr"].as<float>();
+    if (J["coilMa"].is<float>()) p.valveCoilMinCurrent_mA = J["coilMa"].as<float>();
+    if (J["vOpen"].is<JsonArray>()) {
+      auto a = J["vOpen"].as<JsonArray>();
+      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<float>()) p.valveOpenCurrent_mA[i] = a[i].as<float>();
+    }
+    if (J["vClose"].is<JsonArray>()) {
+      auto a = J["vClose"].as<JsonArray>();
+      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<float>()) p.valveCloseCurrent_mA[i] = a[i].as<float>();
+    }
+    if (J["pumpMaxA"].is<float>()) p.pumpMaxCurrent_A       = J["pumpMaxA"].as<float>();
+    if (J["pFillMax"].is<float>()) p.pumpFillMaxTime_s      = J["pFillMax"].as<float>();
+    if (J["pFillTmo"].is<float>()) p.pumpFillTimeout_s      = J["pFillTmo"].as<float>();
+    if (J["pTarget"].is<float>())  p.pumpTargetPressure_bar = J["pTarget"].as<float>();
+    if (J["pMin"].is<float>())     p.pumpMinPressure_bar    = J["pMin"].as<float>();
+    if (J["pMax"].is<float>())     p.pumpMaxPressure_bar    = J["pMax"].as<float>();
+    if (J["abCyc"].is<int>())      p.airBleedCycles         = (uint8_t)J["abCyc"].as<int>();
+    if (J["abOpen"].is<int>())     p.airBleedOpenMs         = (uint16_t)J["abOpen"].as<int>();
+    if (J["abClose"].is<int>())    p.airBleedCloseMs        = (uint16_t)J["abClose"].as<int>();
+    if (J["pOpen"].is<JsonArray>()) {
+      auto a = J["pOpen"].as<JsonArray>();
+      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<float>()) p.pistonOpenCurrent_mA[i] = a[i].as<float>();
+    }
+    if (J["pClose"].is<JsonArray>()) {
+      auto a = J["pClose"].as<JsonArray>();
+      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<float>()) p.pistonCloseCurrent_mA[i] = a[i].as<float>();
+    }
+    if (J["pcOpen"].is<int>())     p.pistonCalibOpenMs      = (uint16_t)J["pcOpen"].as<int>();
+    if (J["pcClose"].is<int>())    p.pistonCalibCloseMs     = (uint16_t)J["pcClose"].as<int>();
+    if (J["pcSettle"].is<int>())   p.pistonCalibSettleMs    = (uint16_t)J["pcSettle"].as<int>();
     AutoTestParams_SaveNVS();
     {
       JsonDocument pdoc;
