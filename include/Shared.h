@@ -10,8 +10,8 @@ class TMAG5173;
 // -------- Firmware Versiyon --------
 #define FW_VERSION_MAJOR 1
 #define FW_VERSION_MINOR 4
-#define FW_VERSION_PATCH 8
-#define FW_VERSION_STR "1.4.8"
+#define FW_VERSION_PATCH 9
+#define FW_VERSION_STR "1.4.9"
 
 // -------- RTOS Objeleri --------
 extern SemaphoreHandle_t  g_sharedMutex;

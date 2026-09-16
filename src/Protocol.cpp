@@ -44,13 +44,19 @@ static void sendFrameReliable(const uint8_t* frame, size_t len, uint32_t timeout
 }
 
 void SerialTx_SendEvent(const JsonDocument& doc, bool reliable) {
-  uint8_t payload[2048];
+  uint8_t payload[4096];
   size_t n = serializeMsgPack(doc, payload, sizeof(payload));
-  if (n == 0 || n >= sizeof(payload)) return;
-  uint8_t frame[2100];
+  if (n == 0 || n >= sizeof(payload)) {
+    char warn[64];
+    snprintf(warn, sizeof(warn), "[EVT] event too large: %u >= %u", (unsigned)n, (unsigned)sizeof(payload));
+    SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, warn);
+    return;
+  }
+  uint8_t frame[4100];
   size_t fn = encodeFrame(frame, sizeof(frame), FT_EVENT, nextSeq(), payload, (uint16_t)n);
   if (fn > 0) {
-    if (reliable) sendFrameReliable(frame, fn);
+    // Büyük parametre cevaplari icin 1sn timeout; 115200 baud'da ~1KB/s pratik hiz
+    if (reliable) sendFrameReliable(frame, fn, fn > 1200 ? 1200 : 200);
     else sendFrameNonBlock(frame, fn);
   }
 }

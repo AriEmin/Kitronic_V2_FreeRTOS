@@ -1,21 +1,21 @@
 {
-  "version": "1.4.8",
-  "release_notes": "FT_EVENT buffer 2048 byte ve JsonDocument ile auto-test parametre cevabi gonderimi.",
+  "version": "1.4.9",
+  "release_notes": "Büyük FT_EVENT kareleri icin gonderim timeoutu ve buffer arttirildi; ATP parametre cevabi guvenilir hale getirildi.",
   "binaries": [
     {
       "name": "bootloader.bin",
       "offset": "0x0000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.8/bootloader.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.9/bootloader.bin"
     },
     {
       "name": "partitions.bin",
       "offset": "0x8000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.8/partitions.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.9/partitions.bin"
     },
     {
       "name": "firmware.bin",
       "offset": "0x10000",
-      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.8/firmware.bin"
+      "url": "https://raw.githubusercontent.com/AriEmin/Kitronic_V2_FreeRTOS/master/firmware/v1.4.9/firmware.bin"
     }
   ]
 }
