@@ -1,6 +1,7 @@
 #include "Shared.h"
 #include "AutoDiag.h"
 #include <Preferences.h>
+#include "Protocol.h"
 #include "modules/tca9548a.h"
 #include "modules/tmag5173.h"
 
@@ -256,7 +257,10 @@ static Preferences s_atpPref;
 
 void AutoTestParams_LoadNVS() {
     atpDefaults(g_autoTestParams);
-    if (!s_atpPref.begin("atp", true)) return;
+    if (!s_atpPref.begin("atp", true)) {
+        kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, (char*)"[AT_NVS] Load begin failed");
+        return;
+    }
     g_autoTestParams.valveCoilMinCurrent_mA = s_atpPref.getFloat("coilMa", 150.0f);
     size_t len;
     len = s_atpPref.getBytes("vOpen", g_autoTestParams.valveOpenCurrent_mA, sizeof(g_autoTestParams.valveOpenCurrent_mA));
@@ -288,10 +292,16 @@ void AutoTestParams_LoadNVS() {
     g_autoTestParams.pistonCalibCloseMs     = s_atpPref.getUShort("pcClose", 1000);
     g_autoTestParams.pistonCalibSettleMs    = s_atpPref.getUShort("pcSettle", 500);
     s_atpPref.end();
+    char ok[80];
+    snprintf(ok, sizeof(ok), "[AT_NVS] Loaded vOpen[0]=%.1f vClose[0]=%.1f", g_autoTestParams.valveOpenCurrent_mA[0], g_autoTestParams.valveCloseCurrent_mA[0]);
+    kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, ok);
 }
 
 void AutoTestParams_SaveNVS() {
-    if (!s_atpPref.begin("atp", false)) return;
+    if (!s_atpPref.begin("atp", false)) {
+        kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, (char*)"[AT_NVS] Save begin failed");
+        return;
+    }
     const auto& p = g_autoTestParams;
     s_atpPref.putFloat("coilMa",  p.valveCoilMinCurrent_mA);
     s_atpPref.putBytes("vOpen",   p.valveOpenCurrent_mA,  sizeof(p.valveOpenCurrent_mA));
@@ -311,6 +321,9 @@ void AutoTestParams_SaveNVS() {
     s_atpPref.putUShort("pcClose", p.pistonCalibCloseMs);
     s_atpPref.putUShort("pcSettle",p.pistonCalibSettleMs);
     s_atpPref.end();
+    char ok[80];
+    snprintf(ok, sizeof(ok), "[AT_NVS] Saved vOpen[0]=%.1f vClose[0]=%.1f", p.valveOpenCurrent_mA[0], p.valveCloseCurrent_mA[0]);
+    kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, ok);
 }
 
 // TMAG kalibrasyon flash storage

@@ -3423,32 +3423,47 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
 
   if (doc["at_params_set"].is<JsonObject>()) {
     auto J = doc["at_params_set"].as<JsonObject>();
+    {
+      char dbg[64];
+      snprintf(dbg, sizeof(dbg), "[AT_SET] keys=%d vOpen[0]=%.1f",
+               (int)J.size(),
+               J["vOpen"].is<JsonArray>() && J["vOpen"].size() > 0 ?
+                 (J["vOpen"][0].is<int>() ? (float)J["vOpen"][0].as<int>() :
+                  J["vOpen"][0].is<float>() ? J["vOpen"][0].as<float>() : -1.0f) : -2.0f);
+      kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, dbg);
+    }
     auto& p = g_autoTestParams;
-    if (J["coilMa"].is<float>()) p.valveCoilMinCurrent_mA = J["coilMa"].as<float>();
+    auto asFloat = [](JsonVariant v)->float {
+      if (v.is<int>()) return (float)v.as<int>();
+      if (v.is<float>()) return v.as<float>();
+      if (v.is<double>()) return (float)v.as<double>();
+      return 0.0f;
+    };
+    if (J["coilMa"].is<int>() || J["coilMa"].is<float>()) p.valveCoilMinCurrent_mA = asFloat(J["coilMa"]);
     if (J["vOpen"].is<JsonArray>()) {
       auto a = J["vOpen"].as<JsonArray>();
-      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<float>()) p.valveOpenCurrent_mA[i] = a[i].as<float>();
+      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<int>() || a[i].is<float>()) p.valveOpenCurrent_mA[i] = asFloat(a[i]);
     }
     if (J["vClose"].is<JsonArray>()) {
       auto a = J["vClose"].as<JsonArray>();
-      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<float>()) p.valveCloseCurrent_mA[i] = a[i].as<float>();
+      for (int i = 0; i < 8 && i < a.size(); i++) if (a[i].is<int>() || a[i].is<float>()) p.valveCloseCurrent_mA[i] = asFloat(a[i]);
     }
-    if (J["pumpMaxA"].is<float>()) p.pumpMaxCurrent_A       = J["pumpMaxA"].as<float>();
-    if (J["pFillMax"].is<float>()) p.pumpFillMaxTime_s      = J["pFillMax"].as<float>();
-    if (J["pFillTmo"].is<float>()) p.pumpFillTimeout_s      = J["pFillTmo"].as<float>();
-    if (J["pTarget"].is<float>())  p.pumpTargetPressure_bar = J["pTarget"].as<float>();
-    if (J["pMin"].is<float>())     p.pumpMinPressure_bar    = J["pMin"].as<float>();
-    if (J["pMax"].is<float>())     p.pumpMaxPressure_bar    = J["pMax"].as<float>();
+    if (J["pumpMaxA"].is<int>() || J["pumpMaxA"].is<float>()) p.pumpMaxCurrent_A       = asFloat(J["pumpMaxA"]);
+    if (J["pFillMax"].is<int>() || J["pFillMax"].is<float>()) p.pumpFillMaxTime_s      = asFloat(J["pFillMax"]);
+    if (J["pFillTmo"].is<int>() || J["pFillTmo"].is<float>()) p.pumpFillTimeout_s      = asFloat(J["pFillTmo"]);
+    if (J["pTarget"].is<int>() || J["pTarget"].is<float>())  p.pumpTargetPressure_bar = asFloat(J["pTarget"]);
+    if (J["pMin"].is<int>() || J["pMin"].is<float>())     p.pumpMinPressure_bar    = asFloat(J["pMin"]);
+    if (J["pMax"].is<int>() || J["pMax"].is<float>())     p.pumpMaxPressure_bar    = asFloat(J["pMax"]);
     if (J["abCyc"].is<int>())      p.airBleedCycles         = (uint8_t)J["abCyc"].as<int>();
     if (J["abOpen"].is<int>())     p.airBleedOpenMs         = (uint16_t)J["abOpen"].as<int>();
     if (J["abClose"].is<int>())    p.airBleedCloseMs        = (uint16_t)J["abClose"].as<int>();
     if (J["pOpen"].is<JsonArray>()) {
       auto a = J["pOpen"].as<JsonArray>();
-      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<float>()) p.pistonOpenCurrent_mA[i] = a[i].as<float>();
+      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<int>() || a[i].is<float>()) p.pistonOpenCurrent_mA[i] = asFloat(a[i]);
     }
     if (J["pClose"].is<JsonArray>()) {
       auto a = J["pClose"].as<JsonArray>();
-      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<float>()) p.pistonCloseCurrent_mA[i] = a[i].as<float>();
+      for (int i = 0; i < 6 && i < a.size(); i++) if (a[i].is<int>() || a[i].is<float>()) p.pistonCloseCurrent_mA[i] = asFloat(a[i]);
     }
     if (J["pcOpen"].is<int>())     p.pistonCalibOpenMs      = (uint16_t)J["pcOpen"].as<int>();
     if (J["pcClose"].is<int>())    p.pistonCalibCloseMs     = (uint16_t)J["pcClose"].as<int>();
@@ -3456,8 +3471,12 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     AutoTestParams_SaveNVS();
     {
       JsonDocument pdoc;
-      auto p = pdoc["p"].to<JsonArray>();
-      sendMsgPackLog(kitronic::MsgCode::AT_PARAMS_SAVED, p);
+      auto parr = pdoc["p"].to<JsonArray>();
+      parr.add(p.valveOpenCurrent_mA[0]);
+      parr.add(p.valveOpenCurrent_mA[1]);
+      parr.add(p.valveOpenCurrent_mA[2]);
+      parr.add(p.valveOpenCurrent_mA[3]);
+      sendMsgPackLog(kitronic::MsgCode::AT_PARAMS_SAVED, parr);
     }
   }
 
