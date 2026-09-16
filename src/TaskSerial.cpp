@@ -845,15 +845,10 @@ static void sendTelemetryJSON_OLD() {
     }
   }  // if (!anyTestRunning) sonu 
 
-  // Test sırasında INA219'u kaldır (buffer overflow önleme)
-  if (!anyTestRunning) {
-    // INA219 sirası: 0 N433,1 N434,2 N435,3 N436,4 N437,5 N438,6 N439,7 N440
-    // PWM/duty dizisi sirası (TaskValveControl): 0 N433,1 N436,2 N434,3 N435,4 N438,5 N440,6 N439,7 N437
-    // DRV mapping: DRV1->N433,N436  DRV2->N434,N435  DRV3->N438,N440  DRV4->N439,N437
-    
-    // g_drvLastFault kullan - fault tespit edildiğinde kaydedilen değerler
-    // (DRV_GetAllStatus kullanma - fault clear sonrası sıfırlanıyor)
-    
+  // Valf akımları (INA219) her zaman gönder; ariza tespiti sirasinda da valf
+  // akimlarinin ekranda gorulmesi gerekir. Diger opsiyonel alanlar test sirasinda
+  // gizlenebilir ama INA219 kritik.
+  {
     auto ina = doc["ina"].to<JsonArray>();
     struct Map { const char* name; int dutyIdx; int drvIdx; int outIdx; };  // outIdx: 1=OUT1, 2=OUT2
     static const Map map[8] = {
@@ -872,7 +867,7 @@ static void sendTelemetryJSON_OLD() {
       ch["V"]  = round(inaV[i] * 10.0) / 10.0;  // 0.1V precision
       ch["I"]  = round(inaI[i] * 10.0) / 10.0;  // 0.1mA precision
       ch["duty"] = duty[map[i].dutyIdx];
-      
+
       // DRV8243 durum: per-output kontrol
       uint8_t status1 = g_drvLastFault[map[i].drvIdx].st2;
       int status = 0;  // OK
@@ -887,7 +882,7 @@ static void sendTelemetryJSON_OLD() {
       }
       ch["drv"] = status;
     }
-  }  // !anyTestRunning
+  }
   
   // INA226 - test sırasında kaldır
   if (!anyTestRunning) {
