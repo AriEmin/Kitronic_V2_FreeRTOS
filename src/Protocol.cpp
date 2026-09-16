@@ -44,10 +44,10 @@ static void sendFrameReliable(const uint8_t* frame, size_t len, uint32_t timeout
 }
 
 void SerialTx_SendEvent(const JsonDocument& doc, bool reliable) {
-  uint8_t payload[1024];
+  uint8_t payload[2048];
   size_t n = serializeMsgPack(doc, payload, sizeof(payload));
   if (n == 0 || n >= sizeof(payload)) return;
-  uint8_t frame[1100];
+  uint8_t frame[2100];
   size_t fn = encodeFrame(frame, sizeof(frame), FT_EVENT, nextSeq(), payload, (uint16_t)n);
   if (fn > 0) {
     if (reliable) sendFrameReliable(frame, fn);

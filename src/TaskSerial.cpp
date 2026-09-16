@@ -3394,7 +3394,7 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
   }
 
   if (doc["at_params_get"].is<bool>() && doc["at_params_get"].as<bool>()) {
-    StaticJsonDocument<1024> resp;
+    JsonDocument resp;
     resp["_t"] = "ATP";
     const auto& p = g_autoTestParams;
     resp["coilMa"]   = p.valveCoilMinCurrent_mA;
@@ -3417,6 +3417,7 @@ static void parseAndDispatch(uint8_t type, const uint8_t* payload, uint16_t len)
     resp["pcClose"]   = p.pistonCalibCloseMs;
     resp["pcSettle"]  = p.pistonCalibSettleMs;
     kitronic::SerialTx_SendEvent(resp, true);
+    kitronic::SerialTx_SendLog(kitronic::MsgCode::UNKNOWN_COMMAND, (char*)"[AT_GET] sent ATP");
   }
 
   if (doc["at_params_set"].is<JsonObject>()) {
